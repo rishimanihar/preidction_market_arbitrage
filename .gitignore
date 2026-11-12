@@ -44,3 +44,6 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# --- Local agent worktrees and tool state ---
+.claude/
