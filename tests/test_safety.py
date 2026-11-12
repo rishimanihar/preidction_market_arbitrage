@@ -1,8 +1,10 @@
 """The research package must not import an order client."""
 
+import os
 import subprocess
 import sys
 import types
+from pathlib import Path
 
 import pytest
 
@@ -10,11 +12,13 @@ from pmarb.safety import assert_no_order_client
 
 
 def test_core_imports_do_not_load_order_modules() -> None:
+    src = Path(__file__).resolve().parents[1] / "src"
     code = """
 import sys
 before = set(sys.modules)
 import pmarb
-import pmarb.calculator
+import pmarb.economics
+import pmarb.fees
 pmarb.safety.assert_no_order_client()
 loaded = [name for name in sys.modules if name not in before]
 bad = [
@@ -25,11 +29,14 @@ bad = [
 print("\\n".join(bad))
 raise SystemExit(1 if bad else 0)
 """
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(src)
     completed = subprocess.run(
         [sys.executable, "-c", code],
         check=False,
         capture_output=True,
         text=True,
+        env=env,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert completed.stdout.strip() == ""

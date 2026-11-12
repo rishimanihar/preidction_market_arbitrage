@@ -37,16 +37,18 @@ def test_market_and_pair_review_store_rules_and_mapping() -> None:
         venue=Venue.KALSHI,
         market_id="KX-1",
         title="Example",
-        outcome_meaning="YES if the stated condition occurs",
+        market_type="winner",
         status="open",
         rules_text="Rules text",
+        rules_hash="abc",
         url="https://kalshi.com/markets/KX-1",
-        fee_metadata={"multiplier": "1"},
+        fee_meta={"multiplier": "1"},
         raw={"ticker": "KX-1"},
     )
     assert market.expected_resolution_utc is None
     assert market.expected_payout_utc is None
-    assert market.fee_metadata["multiplier"] == "1"
+    assert market.fee_meta["multiplier"] == "1"
+    assert market.market_key == "kalshi:KX-1"
 
     approved_at = datetime(2026, 11, 11, tzinfo=UTC)
     review = PairReview(

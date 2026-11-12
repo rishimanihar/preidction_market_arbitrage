@@ -1,4 +1,4 @@
-"""Tests for ``pmarb.kalshi_fee_rounding``.
+"""Tests for ``pmarb.fees.kalshi_rounding``.
 
 Every worked example in https://docs.kalshi.com/getting_started/fee_rounding is encoded here with
 the doc text quoted. Numbers that are NOT in the doc are labelled "derived".
@@ -9,7 +9,7 @@ from decimal import Decimal as D
 
 import pytest
 
-from pmarb.kalshi_fee_rounding import (
+from pmarb.fees.kalshi_rounding import (
     DIRECT_PRECISION,
     NON_DIRECT_PRECISION,
     SIX_DP,
