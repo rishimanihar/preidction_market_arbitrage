@@ -2,24 +2,30 @@
 
 This is the build's living status: what's done, what we've learned that isn't in the plan yet, and what comes next. **Update it at every milestone step.** Read it alongside `docs/IMPLEMENTATION_PLAN.md` (what we're building) and `docs/research/` (why).
 
-_Last updated: 2026-11-11 23:05 CST_
+_Last updated: 2026-11-12 00:15 CST_
 
-## Status
-| Item | State | Where |
+## Status (end of session, 2026-11-12 00:15 CST)
+
+M1 code: **11 of 13 pieces done** and up for review. Remaining: PR-6b and integration, then the 24 h soak.
+
+| PR | Item | State |
 |---|---|---|
-| Research (5 reports, fact-checked) | done | `docs/research/` |
-| Implementation plan v1.1 (adversarially reviewed) | done | `docs/IMPLEMENTATION_PLAN.md` |
-| Security guardrails (gitignore, gitleaks pre-commit + CI, policy) | done | `SECURITY.md`, `.pre-commit-config.yaml`, `.github/workflows/ci.yml` |
-| Phase 1 core (Decimal models, ladder, fees, 2-venue calculator; 39 tests) | done | `src/pmarb/` |
-| **PR #1** foundation → `main` | open, awaiting Rishi | GitHub PR #1 |
-| PR-0 contracts (models, protocols, DDL; 64 tests) | done, PR open | branch `m1/pr0-contracts` |
-| PR-2 foundations: config, secrets, redacting logs, GET-only HTTP client, crash-safe raw log, SQLite writer (155 tests) | done, PR open | `m1/pr2-foundations` |
-| PR-3 Kalshi REST adapter (Codex; 186 tests) | done, PR open | `m1/pr3-kalshi` |
-| PR-4 Polymarket US REST adapter (Codex; 175 tests) | done, PR open | `m1/pr4-polymarket-us` |
-| PR-1 economics + fees (Kalshi fee-rounding algorithm included) | in progress (Grok) | `m1/pr1-economics` |
-| PR-5b matching + team tables (6 leagues) | in progress (Codex) | `m1/pr5b-matching` |
-| PR-5a, PR-6a/6b, PR-7, PR-8 | not started | plan §10 |
-| Venue accounts + API keys (users) | not started; gates M2 | plan §10 "Your task" |
+| #1 | Foundation: research, plan, security, phase 1 | open |
+| #2 | PR-0 contracts (models, protocols, schema) | open |
+| #7 | PR-1 economics + fee models (N-venue, conservative fee bounds) | open |
+| #3 | PR-2 foundations (config, secrets, redaction, GET-only HTTP, raw log, SQLite) | open |
+| #5 | PR-3 Kalshi REST adapter | open |
+| #4 | PR-4 Polymarket US REST adapter | open |
+| #6 | PR-5b matching + team tables | open |
+| #10 | PR-5c matching policy v2: 645 candidates/week, 343/343 research pairs, 0/40 false positives | open |
+| #9 | PR-5a rules hashing + review spool | open |
+| #8 | PR-7 review app (read-only) + `pmarb doctor` / `review` | open |
+| (this) | PR-6a collector poller + freshness | open |
+| #11 | M2-A request signing, both venues | open (M2 prep) |
+| — | **PR-6b** evaluator + episodes + auto-review (D27) | **next** |
+| — | Integration branch + first live end-to-end run | next |
+| — | PR-8 24 h soak during a live slate | after integration |
+| — | Venue accounts + read keys (users) | gates M2 |
 
 ## Learned since plan v1.1
 
@@ -49,7 +55,22 @@ _Last updated: 2026-11-11 23:05 CST_
 - **Tests that use real data** read from `PMARB_DATA_DIR` (default `./data`) and are marked `localdata`. They never point at temporary or session paths.
 - **Public repo.** No live market values in docs. Real data stays only in the gitignored `data/`, and private analyses go in `data/research/`.
 
-## Next steps
+## Next steps (start of next session)
+
+1. **PR-6b** (base: merge `m1/pr6a-poller` + `m1/pr1-economics` + `m1/pr5a-review` + `m1/pr5c-coverage`):
+   - evaluator hook calling `economics.assess_group` for every polled group;
+   - writes assessments through `DbWriterTask`;
+   - episode state machine (indicative vs qualified kept separate);
+   - review intake loop (`review.spool.apply_pending`) plus `review_mode="auto"` (D27);
+   - the DB file is `data/pmarb.sqlite` (the app expects this);
+   - replace the adapters' `fee_model()` stubs with `pmarb.fees` models (Kalshi multiplier from series; precision and Θ from config, unset → unknown).
+2. **Integration branch** `m1/integration`: merge every M1 branch, run the full suite, implement `pmarb scan`, then do a first live run against the public APIs (discover → auto-approve → poll a live game).
+3. **PR-8 soak:** 24 h unattended across an evening slate; report uptime, gaps, 429s, data volume, and indicative gap statistics (size vs skew).
+4. **M2 prep:** a Kalshi WS client using PR #11 signing (needs keys); a game-state recorder from Kalshi `/live_data` (D28).
+5. **Users:** venue accounts + read keys; Rishi turns on secret scanning and protects `main`.
+
+## Next steps (historical, before 2026-11-12)
+
 
 2. Merge PR-2a and PR-2b into `m1/pr2-foundations` (on PR-0), add `storage/db.py`, review, and push.
 3. PR-1 (economics + fees), using the fee-rounding module and finding 1.

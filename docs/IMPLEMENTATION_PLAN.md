@@ -1,6 +1,6 @@
 # Implementation plan
 
-**Status:** v1.1, 2026-11-11 (interfaces frozen in PR-0: `src/pmarb/models.py`, `src/pmarb/protocols.py`, `src/pmarb/storage/migrations/0001_initial.sql`). Live status: `docs/PROGRESS.md`. Supersedes the build sections of `plan.md`; `plan.md` remains the strategy and evidence rationale.
+**Status:** v1.2, 2026-11-12 (interfaces frozen in PR-0: `src/pmarb/models.py`, `src/pmarb/protocols.py`, `src/pmarb/storage/migrations/0001_initial.sql`). Live status: `docs/PROGRESS.md`. Supersedes the build sections of `plan.md`; `plan.md` remains the strategy and evidence rationale.
 **Inputs:** `plan.md`, `docs/research/*` (fact-checked), decision log in §12. v1.1 applies an adversarial review and a cross-check against an independent draft (changes listed in §13).
 **Workflow:** agents build on `avyukth-dev`, one pull request per slice (§10), Rishi reviews and merges into `main`.
 
@@ -212,6 +212,8 @@ The side-by-side page shows, for each member market: the full rules text, the co
 **Rules hash (`hash_version = 1`):** sha256 of a canonical JSON object `{venue, market_id, rules_primary, rules_secondary | description, settlement_sources (sorted), strike fields, notional}`. Text is whitespace-collapsed and NFC-normalized; nothing else. Any later hash change **revokes** the approval automatically and puts the group back in the review queue. Bumping `hash_version` revokes every group by design and requires a new review.
 
 **Stale-review guard:** a review decision carries the hashes the reviewer was shown. The collector applies it only if those still match the current hashes; otherwise the decision is rejected as `stale_review`.
+
+**Review mode (D27).** During testing, `review_mode="auto"` approves policy-v2 candidates automatically; such groups yield only INDICATIVE results. Human review (`review_mode="manual"`, below) is required before any trading milestone.
 
 **Exception risk does not disqualify; it labels.** Every sports pair has some cancellation/fair-price exposure (F11), so blocking on it would block everything. The reviewer must acknowledge the exception table to approve. The group then carries `exception_risk = true`, and every assessment and episode shows it, so the M3 evidence can be split by it. Pairs where a **normal** outcome breaks $1 (different overtime/shootout treatment, a different stat source, different tie handling) are **rejected**, not flagged. Kalshi's short `rules_secondary` can omit what the series terms PDF says (e.g. NHL shootout), so the reviewer checklist links the PDF and requires an explicit tick.
 
@@ -480,6 +482,9 @@ Starts only after the M3 evidence review **and** your explicit approval of a sep
 | D23 | Two test tiers: synthetic in CI, `localdata` local only | active (user) |
 | D24 | No accounts yet (M1 keyless); long runs later on the user's own machine; agents build, Rishi reviews PRs | active (user) |
 | D25 | Storage stays local (SQLite + compressed files) through M1. Cloud sync is deferred to M2/M3: summary tables to a managed Postgres, raw logs to private object storage. All storage access goes through `storage/` interfaces so the switch is cheap. | active |
+| D26 | Matching policy v2: structured team codes are authoritative and labels only corroborate (a contradiction rejects); the Kalshi rules/title date must equal the Polymarket slug date (NY); `occurrence_datetime` is a hint that flags `date_hint_conflict`. Audit: 0/40 false positives. | active |
+| D27 | No manual review during testing: `review_mode="auto"` auto-approves policy-v2 candidates (reviewer `auto:matching-v2`); auto-approved groups can only be INDICATIVE; `review_mode="manual"` is required before M5. | active (user) |
+| D28 | Game-state source priority: venue APIs (Kalshi `/live_data/*`, verified free and unauthenticated) > official league feeds where terms allow > ESPN unofficial only as a private, off-by-default fallback with data kept in `data/`. Recorder is M2/M3 scope. | active (user) |
 
 ## 13. Changes in v1.1 (from review)
 
