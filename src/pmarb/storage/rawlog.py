@@ -27,7 +27,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-KINDS = frozenset({"rest_book", "ws_msg", "market", "conn", "checkpoint"})
+KINDS = frozenset({"rest_book", "ws_msg", "market", "conn", "checkpoint", "gamestate"})
 DEFAULT_MAX_BYTES = 20 * 1024**3
 DEFAULT_MAX_AGE_DAYS = 30
 SUFFIX = ".jsonl.gz"
