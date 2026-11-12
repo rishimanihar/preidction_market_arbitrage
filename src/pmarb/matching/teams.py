@@ -50,11 +50,14 @@ def _code_key(code: str) -> str:
 
 
 def _label_key(text: str) -> str:
-    """Case, accent, whitespace and punctuation insensitive key; trailing 'St.' means State."""
+    """Normalize spelling, preserving Saint at the start and State at the end."""
     s = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().lower()
     s = _WOMEN_MARK.sub(" ", s)
     s = re.sub(r"['’`]", "", s).replace("&", " and ")
     tokens = re.sub(r"[^a-z0-9]+", " ", s).split()
+    tokens = ["university" if token == "univ" else token for token in tokens]
+    if len(tokens) > 1 and tokens[0] == "st":
+        tokens[0] = "saint"
     if tokens and tokens[-1] == "st":
         tokens[-1] = "state"
     return " ".join(tokens)

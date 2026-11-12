@@ -158,7 +158,7 @@ ncaamb:MRSH,ncaamb,Marshall,Marshall,Thundering Herd,MRSH,marsh,MRSH,observed
 ncaamb:MRST,ncaamb,Marist,Marist,Red Foxes,MRST,marist,MAR,observed
 ncaamb:MSM,ncaamb,Mount St. Mary's,Mount St. Mary's,Mountaineers,MSM,mstm,MOUNT,observed
 ncaamb:MSST,ncaamb,Mississippi State,Mississippi State,Bulldogs,MSST,mspst,Mississippi St.|MSST,observed
-ncaamb:MSU,ncaamb,Michigan State,Michigan State,Spartans,MSU,mst,Michigan St.|MSU,observed
+ncaamb:MSU,ncaamb,Michigan State,Michigan State,Spartans,MSU,mst,Michigan St.,observed
 ncaamb:MTST,ncaamb,Montana State,Montana State,Bobcats,MTST,monst,Montana St.|MTST,observed
 ncaamb:MTU,ncaamb,Middle Tennessee,Middle Tennessee,Blue Raiders,MTU,mtnst,MTSU,observed
 ncaamb:MURR,ncaamb,Murray State,Murray State,Racers,MURR,murst,Murray St.|MURR,observed
@@ -376,7 +376,7 @@ ncaamb:JAX,ncaamb,Jacksonville,Jacksonville,Dolphins,,jax,JAX,observed
 ncaamb:KAN,ncaamb,Kansas,Kansas,Jayhawks,,kan,KU,observed
 ncaamb:KANST,ncaamb,Kansas State,Kansas State,Wildcats,,kanst,KSU,observed
 ncaamb:KENEST,ncaamb,Kennesaw State,Kennesaw State,Owls,,kenest,KENN,observed
-ncaamb:KSU,ncaamb,Kentucky State,Kentucky State,Thorobreds,,ksu,KSU,observed
+ncaamb:KSU,ncaamb,Kentucky State,Kentucky State,Thorobreds,,ksu,,observed
 ncaamb:LAKE,ncaamb,Wright State Lake,Wright State Lake,Lakers,,lake,LAKE,observed
 ncaamb:LAMAR,ncaamb,Lamar,Lamar,Cardinals,,lamar,LAM,observed
 ncaamb:LC,ncaamb,Louisiana Christian,Louisiana Christian,Wildcats,,lc,LC,observed
@@ -395,7 +395,7 @@ ncaamb:MID,ncaamb,Midway,Midway,Eagles,,mid,MID,observed
 ncaamb:MISE,ncaamb,Misericordia,Misericordia,Cougars,,mise,MISE,observed
 ncaamb:MISS,ncaamb,Ole Miss,Ole Miss,Rebels,,miss,MISS,observed
 ncaamb:MSRST,ncaamb,Missouri State,Missouri State,Bears,,msrst,MOST,observed
-ncaamb:MSU2,ncaamb,Mayville State,Mayville State,Comets,,msu,MSU,observed
+ncaamb:MSU2,ncaamb,Mayville State,Mayville State,Comets,,msu,,observed
 ncaamb:NCAT,ncaamb,North Carolina A&T,North Carolina A&T,Aggies,,ncat,NCAT,observed
 ncaamb:NEWM,ncaamb,Newman,Newman,Jets,,newm,NEWM,observed
 ncaamb:NO,ncaamb,New Orleans,New Orleans,Privateers,,no,UNO,observed

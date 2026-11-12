@@ -139,23 +139,38 @@ def _versus_labels(table: TeamTable, text: str, venue: Venue) -> tuple[set[str],
     """Resolve complete matchup labels after removing known venue prose."""
     found: set[str] = set()
     for line in text.splitlines():
-        separator = re.search(r"\b(?:vs\.?|versus)\s+|\s+at\s+", line, re.IGNORECASE)
+        # An explicit versus separator takes precedence over an "at" inside
+        # a school name (for example, University at Albany).
+        separator = re.search(r"\b(?:vs\.?|versus)\s+", line, re.IGNORECASE)
+        separators = [separator] if separator is not None else []
         if separator is None:
+            single_team = re.sub(
+                r"\s+(?:to\s+win|wins?|winner)\s*[?!]*$", "", line, flags=re.IGNORECASE
+            )
+            if single_team != line and _resolve(table, single_team, venue) is not None:
+                continue
+            separators = list(re.finditer(r"\s+at\s+", line, re.IGNORECASE))
+        if not separators:
             continue
-        left, right = line[: separator.start()], line[separator.end() :]
-        left = re.split(r"\bwins?\s+(?:in\s+)?the\s+", left, flags=re.IGNORECASE)[-1]
-        right = re.split(
-            r"\s+(?:winner\b|game\b|originally\b|on\s+|"
-            r"(?:men's|women's|mens|womens)\s+college\b|college\s+"
-            r"(?:football|basketball)\b|pro\s+(?:football|basketball)\b|NHL\b)",
-            right,
-            maxsplit=1,
-            flags=re.IGNORECASE,
-        )[0]
-        ids = [_resolve(table, label.strip(" ,:?"), venue) for label in (left, right)]
-        if None in ids or ids[0] == ids[1]:
+        interpretations: list[set[str]] = []
+        for separator in separators:
+            left, right = line[: separator.start()], line[separator.end() :]
+            left = re.split(r"\bwins?\s+(?:in\s+)?the\s+", left, flags=re.IGNORECASE)[-1]
+            right = re.split(
+                r"\s+(?:winner\b|game\b|originally\b|on\s+|"
+                r"(?:men's|women's|mens|womens)\s+college\b|college\s+"
+                r"(?:football|basketball)\b|pro\s+(?:football|basketball)\b|NHL\b)",
+                right,
+                maxsplit=1,
+                flags=re.IGNORECASE,
+            )[0]
+            ids = [_resolve(table, label.strip(" ,:?"), venue) for label in (left, right)]
+            if None not in ids and ids[0] != ids[1]:
+                interpretations.append(set(ids))
+        # Multiple valid parses are ambiguous even when one looks more likely.
+        if len(interpretations) != 1:
             return set(), True
-        found.update(ids)
+        found.update(interpretations[0])
     return found, False
 
 
@@ -170,15 +185,16 @@ def _kalshi_yes(market: Market, table: TeamTable) -> str | None:
                 return None
             sources.append(resolved)
     # A single-team winner title supplies independent polarity evidence.
-    if not re.search(r"\b(?:vs\.?|versus|at)\s+", market.title, re.IGNORECASE):
+    if not re.search(r"\b(?:vs\.?|versus)\s+", market.title, re.IGNORECASE):
         title = re.sub(
             r"\s+(?:to\s+win|wins?|winner)\s*[?!]*$", "", market.title, flags=re.IGNORECASE
         )
         if title != market.title:
             resolved = _resolve(table, title, Venue.KALSHI)
-            if resolved is None:
+            if resolved is None and not re.search(r"\s+at\s+", title, re.IGNORECASE):
                 return None
-            sources.append(resolved)
+            if resolved is not None:
+                sources.append(resolved)
     return sources[0] if len(set(sources)) == 1 else None
 
 
