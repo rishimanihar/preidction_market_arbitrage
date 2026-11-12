@@ -2,30 +2,25 @@
 
 This is the build's living status: what's done, what we've learned that isn't in the plan yet, and what comes next. **Update it at every milestone step.** Read it alongside `docs/IMPLEMENTATION_PLAN.md` (what we're building) and `docs/research/` (why).
 
-_Last updated: 2026-11-12 00:15 CST_
+_Last updated: 2026-11-12 13:30 CST_
 
-## Status (end of session, 2026-11-12 00:15 CST)
+## Status (2026-11-12 13:30 CST)
 
-M1 code: **11 of 13 pieces done** and up for review. Remaining: PR-6b and integration, then the 24 h soak.
+**All of M1 is built and integrated** on `m1/integration` (548 tests). The first live end-to-end run has happened. Fixes it surfaced are in progress on `m1/livefix`.
 
 | PR | Item | State |
 |---|---|---|
-| #1 | Foundation: research, plan, security, phase 1 | open |
-| #2 | PR-0 contracts (models, protocols, schema) | open |
-| #7 | PR-1 economics + fee models (N-venue, conservative fee bounds) | open |
-| #3 | PR-2 foundations (config, secrets, redaction, GET-only HTTP, raw log, SQLite) | open |
-| #5 | PR-3 Kalshi REST adapter | open |
-| #4 | PR-4 Polymarket US REST adapter | open |
-| #6 | PR-5b matching + team tables | open |
-| #10 | PR-5c matching policy v2: 645 candidates/week, 343/343 research pairs, 0/40 false positives | open |
-| #9 | PR-5a rules hashing + review spool | open |
-| #8 | PR-7 review app (read-only) + `pmarb doctor` / `review` | open |
-| (this) | PR-6a collector poller + freshness | open |
-| #11 | M2-A request signing, both venues | open (M2 prep) |
-| — | **PR-6b** evaluator + episodes + auto-review (D27) | **next** |
-| — | Integration branch + first live end-to-end run | next |
-| — | PR-8 24 h soak during a live slate | after integration |
-| — | Venue accounts + read keys (users) | gates M2 |
+| #1–#10, #12 | Foundation, contracts, foundations, adapters, matching v1/v2, review store, poller | open |
+| #7 | Economics + fees | open |
+| #8 | Review app + CLI | open |
+| #13 | Game-state recorder (Kalshi `/live_data`) | open |
+| #14 / #15 | M2: Polymarket US / Kalshi WebSocket streams | open |
+| #11 | M2: request signing | open |
+| #16 | `pmarb report` (M1 analysis) | open |
+| `m1/pr6b-evaluator` | PR-6b: evaluator, episodes, discovery, auto-review, scenario fees | pushed |
+| `m1/integration` | Everything merged and reconciled (report ported to the PR-1 fee models) | pushed |
+| `m1/livefix` | Profile and fix discovery slowness and backpressure (Codex) | in progress |
+| `m1/deploy` | launchd/systemd templates, install script, clock check (Codex) | in progress |
 
 ## Learned since plan v1.1
 
@@ -45,6 +40,15 @@ M1 code: **11 of 13 pieces done** and up for review. Remaining: PR-6b and integr
 4. **The Polymarket US order fee is a cap, not a single rounded sum.** Each fill is rounded half-even, and the cumulative charge is capped at `round_half_even(Σ exact)`, so the cap is a safe upper bound for assessments. _(in plan v1.1)_
 5. **Scripts cannot fetch the Kalshi fee schedule PDF** (Vercel bot check, 429). It was read in a browser: taker 0.07, maker 0.0175, effective 2026-07-07. Recheck the effective date periodically.
 6. **Team tables cover 100% of both venues' game listings in a one-week snapshot** (NFL, NBA and NHL complete; NCAA tables built from the same snapshot, so that 100% is not a held-out measure). Kalshi and Polymarket codes differ (`JAC`/`jax`, `GSW`/`gs`, `VGK`/`veg`). The resolver raises on ambiguous labels (`New York G/J`, bare `Los Angeles`, `Wildcats`) instead of guessing. New NCAA schools will show up as unresolved and need adding.
+
+7. **First live run (`pmarb scan --once`, 2026-11-12).**
+   - Discovery found 1,186 Kalshi and 959 Polymarket US markets and auto-approved 570 groups. Concurrent fetch skew was 153–211 ms.
+   - The run took 15.6 min.
+   - The discovery burst (~1,000 raw envelopes) tripped `recording_backpressure`, which invalidated every book (ages ~141 s), so all 24 assessments were rejected.
+   - Pregame pairs were `not_profitable` anyway.
+   - Fix in progress on `m1/livefix`.
+8. **Polymarket US `comboEnabled` means "usable as a combo leg".** Excluding it found 0 live markets (D29, fixed).
+9. **Scenario fees (D30) are needed while nobody has accounts.** Without them every assessment is `fee_unknown`, so no episode can open.
 
 ## Engineering conventions learned the hard way
 
