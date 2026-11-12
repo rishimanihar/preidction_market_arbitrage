@@ -2,8 +2,11 @@
 
 import json
 import logging as _logging
+import os
 import re
 import sys
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Any
 
 MASK = "[REDACTED]"
@@ -50,10 +53,16 @@ class RedactingFilter(_logging.Filter):
     """Mask secrets in the message, args and exception text of every record."""
 
     def filter(self, record: _logging.LogRecord) -> bool:
-        if isinstance(record.msg, str):
-            record.msg = redact(record.msg)
         if record.args:
-            record.args = _redact_value(record.args)
+            try:
+                record.msg = redact(record.getMessage())
+                record.args = ()
+            except (TypeError, ValueError):
+                if isinstance(record.msg, str):
+                    record.msg = redact(record.msg)
+                record.args = _redact_value(record.args)
+        elif isinstance(record.msg, str):
+            record.msg = redact(record.msg)
         if record.exc_info and record.exc_info[1] is not None:
             formatted = _logging.Formatter().formatException(record.exc_info)
             record.exc_text = redact(formatted)
@@ -78,15 +87,48 @@ class JsonFormatter(_logging.Formatter):
         return json.dumps(payload, default=str)
 
 
-def configure_logging(level: int | str = "INFO", stream: Any = None) -> _logging.Logger:
-    """Install a JSON handler with the redacting filter on the root logger."""
-    handler = _logging.StreamHandler(stream or sys.stderr)
+DEFAULT_MAX_BYTES = 10 * 1024 * 1024
+DEFAULT_BACKUP_COUNT = 5
+
+
+def configure_logging(
+    level: int | str = "INFO",
+    stream: Any = None,
+    *,
+    log_dir: Path | str | None = None,
+    max_bytes: int = DEFAULT_MAX_BYTES,
+    backup_count: int = DEFAULT_BACKUP_COUNT,
+) -> _logging.Logger:
+    """Install redacted JSON logging, rotating in ``log_dir`` when supplied.
+
+    File mode is intentionally file-only so launchd and other service managers
+    do not accumulate an unbounded stdout/stderr log. Defaults cap the active
+    file at 10 MiB and retain five rotated files.
+    """
+    if max_bytes <= 0:
+        raise ValueError("max_bytes must be positive")
+    if backup_count < 1:
+        raise ValueError("backup_count must be positive")
+    if log_dir is None:
+        log_dir = os.environ.get("PMARB_LOG_DIR")
+    if log_dir is None:
+        handler: _logging.Handler = _logging.StreamHandler(stream or sys.stderr)
+    else:
+        directory = Path(log_dir).expanduser()
+        directory.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(
+            directory / "pmarb.log",
+            maxBytes=max_bytes,
+            backupCount=backup_count,
+            encoding="utf-8",
+        )
     handler.setFormatter(JsonFormatter())
     handler.addFilter(RedactingFilter())
     handler.set_name("pmarb")
     root = _logging.getLogger()
     for old in [h for h in root.handlers if h.get_name() == "pmarb"]:
         root.removeHandler(old)
+        old.close()
     root.addHandler(handler)
     root.setLevel(level)
     return root
