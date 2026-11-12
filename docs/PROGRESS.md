@@ -21,7 +21,7 @@ _Last updated: 2026-11-12 14:08 CST_
 | `m1/integration` | Everything merged and reconciled (report ported to the PR-1 fee models) | pushed |
 | `m1/livefix` | Profile and fix discovery slowness and backpressure (Codex) | in progress |
 | `m1/deploy` | launchd/systemd templates, install script, clock check (Codex) | in progress |
-| `m2/stream-integration` | M2-D: streams wired into the collector (per-venue stream/poll mode, REST fallback, atomic qualification); stacked on `m1/integration` + #14 + #15 | PR open, needs keys to verify live |
+| #18 | M2-D: streams wired into the collector (per-venue stream/poll mode, REST fallback, atomic qualification); stacked on `m1/integration` + #14 + #15 | PR open, needs keys to verify live |
 
 ## Learned since plan v1.1
 
