@@ -402,6 +402,8 @@ def test_typed_writes_round_trip_and_checks_reject(tmp_path: Path) -> None:
         provenance = json.loads(got["fee_provenance_json"])
         assert provenance["yes"]["provenance"] == "kalshi-schedule"
         assert provenance["no"]["conservative_bound"] is False
+        for side in ("yes", "no"):
+            assert provenance[side]["levels_consumed"] == [{"price": "0.4500", "size": "10.00"}]
 
         rejected_id = insert_assessment(
             conn,
