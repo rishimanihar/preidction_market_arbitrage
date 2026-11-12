@@ -82,8 +82,12 @@ def is_eligible(raw_market: dict[str, Any]) -> tuple[bool, list[str]]:
         reasons.append("market_not_open")
     if raw.get("closed") is not False:
         reasons.append("market_closed")
-    if raw.get("comboEnabled") is not False:
-        reasons.append("combo_enabled")
+    # ``comboEnabled`` only means the market may be used as a leg of a
+    # user-built combo. Combos are separate instruments with their own symbols,
+    # and "a leg settles inside a combo exactly as it would settle on its own"
+    # (https://docs.polymarket.us/faqs/combos-faqs.md). Every live game-winner
+    # market observed on 2026-11-12 had ``comboEnabled: true``, so it must not
+    # disqualify. Combo instruments themselves fail the single-instrument check.
     sides = raw.get("marketSides")
     sides_valid = (
         isinstance(sides, list)

@@ -70,13 +70,15 @@ def test_every_market_fixture_parses():
         parse_market(raw)
 
 
-def test_eligibility_rejects_resolved_combo_and_malformed_sides():
+def test_eligibility_rejects_resolved_and_malformed_sides_but_not_combo_enabled():
     raw = fixture("market_by_slug.json")["market"]
     assert is_eligible(raw)[0]
     resolved = {**raw, "status": "MARKET_STATUS_RESOLVED", "active": True}
     assert "market_not_open" in is_eligible(resolved)[1]
-    combo = {**raw, "comboEnabled": True}
-    assert "combo_enabled" in is_eligible(combo)[1]
+    # comboEnabled means "usable as a combo leg", not "is a combo" (live
+    # game-winner markets all have it set); it must not disqualify.
+    for combo_flag in (True, False):
+        assert is_eligible({**raw, "comboEnabled": combo_flag})[0]
     malformed = {**raw, "marketSides": raw["marketSides"][:1]}
     assert "not_single_instrument" in is_eligible(malformed)[1]
     for sides in (
