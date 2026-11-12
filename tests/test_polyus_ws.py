@@ -14,14 +14,22 @@ from websockets.datastructures import Headers
 from websockets.exceptions import InvalidStatus
 from websockets.http11 import Response
 
-from pmarb.calculator import assess
+from pmarb.economics import LegInput, assess
 from pmarb.http import Backoff
-from pmarb.models import Level, Venue
+from pmarb.models import AssessmentClass, FeeQuote, Leg, Level, Side, Venue
 from pmarb.secrets import SecretPolicyError
 from pmarb.venues.polymarket_us.ws import WS_URL, PolyUSMarketStream, _NoRedirectConnect
-from tests.conftest import make_book, standard_fees
+from tests.conftest import make_book
 
 SLUG = "synthetic-market"
+
+
+class ZeroFee:
+    """Known zero fee, so only book validity decides the assessment."""
+
+    def taker_fee(self, levels, side):
+        del levels, side
+        return FeeQuote(amount=Decimal(0), provenance="test:zero")
 
 
 def frame(*, bid="0.40", offer="0.60", slug=SLUG, state="MARKET_STATE_OPEN"):
@@ -426,15 +434,21 @@ def test_depth_is_recorded_and_marked_unconfirmed():
     )
     assessment = assess(
         "synthetic-pair",
-        "A",
+        LegInput(
+            Leg(venue=Venue.KALSHI, market_id="synthetic-kalshi", side=Side.YES), kalshi, ZeroFee()
+        ),
+        LegInput(
+            Leg(venue=Venue.POLYMARKET_US, market_id=SLUG, side=Side.NO), event.book, ZeroFee()
+        ),
         Decimal(10),
-        kalshi,
-        event.book,
-        standard_fees(),
         now_monotonic=event.book.received_monotonic,
+        now_wall=event.book.received_utc,
+        books_atomic=False,
+        exception_risk=False,
+        model_version="test",
     )
-    assert not assessment.qualified
-    assert "book_invalid_polymarket_us" in assessment.rejection_reasons
+    assert assessment.result_class is not AssessmentClass.QUALIFIED
+    assert "book_invalid_polymarket_us" in assessment.reasons
 
 
 def test_market_closed_state_is_invalid_and_cancellation_closes_socket():
