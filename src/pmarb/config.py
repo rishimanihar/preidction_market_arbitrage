@@ -6,6 +6,7 @@ variables in ``.env.example``) and an optional env file outside the repo,
 ``repr``; private keys are referenced by path only.
 """
 
+import os
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal
@@ -139,7 +140,8 @@ class Settings(BaseSettings):
 
 
 def load_settings(env_file: Path | str | None = None) -> Settings:
-    """Load settings; ``env_file`` overrides the default ``~/.config/pmarb/.env``."""
-    if env_file is None:
-        return Settings()
-    return Settings(_env_file=env_file)
+    """Load settings; an explicit path overrides ``PMARB_ENV_FILE`` and default."""
+    selected = env_file if env_file is not None else os.environ.get("PMARB_ENV_FILE")
+    if selected is None:
+        selected = DEFAULT_ENV_FILE
+    return Settings(_env_file=selected)

@@ -65,6 +65,21 @@ def test_env_file_with_inline_comment_and_blank_values(tmp_path: Path) -> None:
     assert s.kalshi_private_key_path == Path("~/k.pem").expanduser()
 
 
+def test_load_settings_env_file_precedence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    default_file = tmp_path / "default.env"
+    environment_file = tmp_path / "environment.env"
+    explicit_file = tmp_path / "explicit.env"
+    default_file.write_text("PMARB_REVIEW_PORT=8502\n", encoding="utf-8")
+    environment_file.write_text("PMARB_REVIEW_PORT=8503\n", encoding="utf-8")
+    explicit_file.write_text("PMARB_REVIEW_PORT=8504\n", encoding="utf-8")
+    monkeypatch.setattr("pmarb.config.DEFAULT_ENV_FILE", default_file)
+
+    assert load_settings().review_port == 8502
+    monkeypatch.setenv("PMARB_ENV_FILE", str(environment_file))
+    assert load_settings().review_port == 8503
+    assert load_settings(explicit_file).review_port == 8504
+
+
 @pytest.mark.parametrize("theta", ["0.095", "0.085", "0.075", "0.0695"])
 def test_theta_allowed(theta: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PMARB_POLYUS_THETA", theta)

@@ -19,7 +19,8 @@ from pydantic import ValidationError
 from pmarb import __version__
 from pmarb.analysis.metrics import build_metrics
 from pmarb.analysis.report import render_report
-from pmarb.config import Settings, load_settings
+from pmarb.config import DEFAULT_ENV_FILE, Settings, load_settings
+from pmarb.diagnostics import deployment_checks
 from pmarb.secrets import SecretPolicyError, check_key_file
 from pmarb.storage.db import open_reader
 
@@ -188,7 +189,12 @@ def _check_data_dir(data_dir: Path, repo_root: Path | None) -> list[str]:
     return errors
 
 
-def _doctor(settings: Settings, repo_root: Path | None) -> list[str]:
+def _doctor(
+    settings: Settings,
+    repo_root: Path | None,
+    command_runner: object | None = None,
+    env_file: Path = DEFAULT_ENV_FILE,
+) -> list[str]:
     errors: list[str] = []
     errors.extend(_check_data_dir(settings.data_dir, repo_root))
     for label, key_path in (
@@ -218,6 +224,7 @@ def _doctor(settings: Settings, repo_root: Path | None) -> list[str]:
         importlib.import_module("streamlit")
     except ImportError as exc:
         errors.append(f"Streamlit import failed: {exc}")
+    errors.extend(deployment_checks(settings.data_dir, env_file, command_runner))
     return errors
 
 
@@ -228,7 +235,7 @@ def _load_review_app() -> Path:
     return path
 
 
-def _run_review(port: int) -> int:
+def _run_review(port: int, env_file: Path | None = None) -> int:
     try:
         app = _load_review_app()
     except FileNotFoundError as exc:
@@ -243,8 +250,14 @@ def _run_review(port: int) -> int:
         "--server.address=127.0.0.1",
         f"--server.port={port}",
     ]
+    child_env = None
+    if env_file is not None:
+        child_env = os.environ.copy()
+        child_env["PMARB_ENV_FILE"] = str(env_file.expanduser())
     try:
-        return subprocess.run(command, check=False).returncode
+        return subprocess.run(
+            command, check=False, **({"env": child_env} if child_env else {})
+        ).returncode
     except OSError as exc:
         print(f"could not launch Streamlit: {exc}", file=sys.stderr)
         return 1
@@ -316,10 +329,17 @@ def _scan(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="pmarb")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument("--env-file", type=Path, default=None, help="settings file path")
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("doctor", help="check local configuration and runtime readiness")
+    doctor = commands.add_parser("doctor", help="check local configuration and runtime readiness")
+    doctor.add_argument(
+        "--env-file", type=Path, default=argparse.SUPPRESS, help="settings file path"
+    )
     review = commands.add_parser("review", help="launch the local review app")
     review.add_argument("--port", type=int, default=None)
+    review.add_argument(
+        "--env-file", type=Path, default=argparse.SUPPRESS, help="settings file path"
+    )
     scan = commands.add_parser(
         "scan",
         help="discover markets, review groups, poll books, and evaluate",
@@ -352,7 +372,7 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(_report(args, parser))
     if args.command == "review":
         try:
-            settings = load_settings()
+            settings = load_settings(args.env_file)
         except (ValidationError, OSError):
             print(
                 "FAIL config: settings are invalid; check the PMARB_* configuration",
@@ -366,22 +386,33 @@ def main(argv: list[str] | None = None) -> None:
         )
         if not 1 <= port <= 65535:
             parser.error("review port must be between 1 and 65535")
-        raise SystemExit(_run_review(port))
+        raise SystemExit(_run_review(port, args.env_file))
     if args.command == "doctor":
         try:
-            settings = load_settings()
+            settings = load_settings(args.env_file)
         except (ValidationError, OSError):
             print(
                 "FAIL config: settings are invalid; check the PMARB_* configuration",
                 file=sys.stderr,
             )
             raise SystemExit(1) from None
-        problems = _doctor(settings, _repo_root())
-        if problems:
-            for problem in problems:
-                print(f"FAIL {problem}", file=sys.stderr)
+        configured_env_file = Path(
+            args.env_file or os.environ.get("PMARB_ENV_FILE", DEFAULT_ENV_FILE)
+        ).expanduser()
+        problems = _doctor(settings, _repo_root(), subprocess.run, configured_env_file)
+        failures = [problem for problem in problems if not problem.startswith(("INFO ", "WARN "))]
+        for finding in problems:
+            if finding.startswith("WARN "):
+                print(finding, file=sys.stderr)
+            elif finding.startswith("INFO "):
+                print(finding)
+            elif finding.startswith("FAIL "):
+                print(finding, file=sys.stderr)
+            else:
+                print(f"FAIL {finding}", file=sys.stderr)
+        if failures:
             raise SystemExit(1)
-        print("OK config, data dir, disk, keys, database schema, and Streamlit")
+        print("OK config, data dir, disk, keys, database schema, Streamlit, logs, and env file")
         return
     raise SystemExit(2)
 

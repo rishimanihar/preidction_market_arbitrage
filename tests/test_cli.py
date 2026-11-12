@@ -69,9 +69,21 @@ def test_scan_once_help_explains_fresh_sample_fallback(
 
 def _make_database(data_dir: Path, version: int = 1) -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "logs").mkdir(exist_ok=True)
     db_path = data_dir / "pmarb.sqlite"
     with closing(open_writer(db_path)) as conn:
         conn.execute("UPDATE schema_version SET version = ?", (version,))
+
+
+def _doctor_offline(settings: Settings, repo_root: Path | None) -> list[str]:
+    def run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        if command[0] == "sntp":
+            return SimpleNamespace(returncode=0, stdout="+0.001000 +/- 0.001000 time.apple.com")
+        if command[0] in {"timedatectl", "systemsetup"}:
+            return SimpleNamespace(returncode=0, stdout="yes\n")
+        return SimpleNamespace(returncode=1, stdout="")
+
+    return cli._doctor(settings, repo_root, run, env_file=Path("/nonexistent/pmarb.env"))
 
 
 def test_doctor_happy_path(tmp_path: Path) -> None:
@@ -79,7 +91,9 @@ def test_doctor_happy_path(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     _make_database(data_dir)
-    assert cli._doctor(Settings(data_dir=data_dir), repo_root) == []
+    assert not any(
+        item.startswith("FAIL") for item in _doctor_offline(Settings(data_dir=data_dir), repo_root)
+    )
 
 
 def test_doctor_command_happy_path(
@@ -91,8 +105,13 @@ def test_doctor_command_happy_path(
     _make_database(data_dir)
     monkeypatch.setenv("PMARB_DATA_DIR", str(data_dir))
     monkeypatch.setattr(cli, "_repo_root", lambda: repo_root)
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="+0.001 +/- 0.001 time.apple.com"),
+    )
     cli.main(["doctor"])
-    assert capsys.readouterr().out.startswith("OK config")
+    assert "OK config" in capsys.readouterr().out
 
 
 def test_doctor_command_failure_exits_nonzero(
@@ -101,7 +120,13 @@ def test_doctor_command_failure_exits_nonzero(
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     monkeypatch.setenv("PMARB_DATA_DIR", str(tmp_path / "data"))
+    (tmp_path / "data" / "logs").mkdir(parents=True)
     monkeypatch.setattr(cli, "_repo_root", lambda: repo_root)
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="+0.001 +/- 0.001 time.apple.com"),
+    )
     with pytest.raises(SystemExit) as raised:
         cli.main(["doctor"])
     assert raised.value.code == 1
@@ -114,7 +139,9 @@ def test_doctor_reports_missing_database_and_key(tmp_path: Path) -> None:
     data_dir = tmp_path / "external-data"
     bad_key = tmp_path / "bad.pem"
     bad_key.write_text("never print key material", encoding="utf-8")
-    errors = cli._doctor(Settings(data_dir=data_dir, kalshi_private_key_path=bad_key), repo_root)
+    errors = _doctor_offline(
+        Settings(data_dir=data_dir, kalshi_private_key_path=bad_key), repo_root
+    )
     joined = " ".join(errors)
     assert "database not found" in joined
     assert "key file check failed" in joined
@@ -127,7 +154,8 @@ def test_doctor_rejects_wrong_schema(tmp_path: Path) -> None:
     repo_root.mkdir()
     _make_database(data_dir, version=9)
     assert any(
-        "schema version must be 1" in e for e in cli._doctor(Settings(data_dir=data_dir), repo_root)
+        "schema version must be 1" in e
+        for e in _doctor_offline(Settings(data_dir=data_dir), repo_root)
     )
 
 
@@ -138,7 +166,7 @@ def test_doctor_rejects_missing_or_extra_schema_rows(tmp_path: Path, rows: list[
     with closing(sqlite3.connect(data_dir / "pmarb.sqlite")) as conn:
         conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
         conn.executemany("INSERT INTO schema_version VALUES (?)", [(row,) for row in rows])
-    errors = cli._doctor(Settings(data_dir=data_dir), tmp_path / "repo")
+    errors = _doctor_offline(Settings(data_dir=data_dir), tmp_path / "repo")
     assert any("schema version must be 1" in error for error in errors)
 
 
@@ -149,7 +177,7 @@ def test_doctor_rejects_missing_or_malformed_schema_table(tmp_path: Path, ddl: s
     with closing(sqlite3.connect(data_dir / "pmarb.sqlite")) as conn:
         if ddl is not None:
             conn.execute(ddl)
-    errors = cli._doctor(Settings(data_dir=data_dir), tmp_path / "repo")
+    errors = _doctor_offline(Settings(data_dir=data_dir), tmp_path / "repo")
     assert any("database schema check failed" in error for error in errors)
 
 
@@ -237,7 +265,7 @@ def test_doctor_reports_unavailable_streamlit(
     monkeypatch.setattr(cli.importlib, "import_module", unavailable)
     assert any(
         "Streamlit import failed" in error
-        for error in cli._doctor(Settings(data_dir=data_dir), tmp_path / "repo")
+        for error in _doctor_offline(Settings(data_dir=data_dir), tmp_path / "repo")
     )
 
 
@@ -252,6 +280,22 @@ def test_doctor_config_error_is_redacted(
     assert "sensitive-value" not in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    "argv", [["--env-file", "before.env", "doctor"], ["doctor", "--env-file", "after.env"]]
+)
+def test_doctor_accepts_env_file_before_or_after_command(
+    argv: list[str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    requested = Path(argv[1] if argv[0] == "--env-file" else argv[2])
+    loaded: list[Path | None] = []
+    monkeypatch.setattr(cli, "load_settings", lambda path=None: loaded.append(path) or Settings())
+    monkeypatch.setattr(cli, "_repo_root", lambda: None)
+    monkeypatch.setattr(cli, "_doctor", lambda *args: [])
+    cli.main(argv)
+    assert loaded == [requested]
+    assert "OK config" in capsys.readouterr().out
+
+
 def test_review_uses_loopback_and_requested_port(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -260,9 +304,10 @@ def test_review_uses_loopback_and_requested_port(
     monkeypatch.setattr(cli, "_load_review_app", lambda: entry)
     called: dict[str, object] = {}
 
-    def fake_run(command: list[str], *, check: bool) -> SimpleNamespace:
+    def fake_run(command: list[str], *, check: bool, **kwargs: object) -> SimpleNamespace:
         called["command"] = command
         called["check"] = check
+        called.update(kwargs)
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(cli.subprocess, "run", fake_run)
@@ -282,16 +327,16 @@ def test_review_uses_loopback_and_requested_port(
 def test_review_port_argument_overrides_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(cli, "load_settings", lambda: Settings(review_port=8123))
-    monkeypatch.setattr(cli, "_run_review", lambda port: port)
+    monkeypatch.setattr(cli, "load_settings", lambda *args: Settings(review_port=8123))
+    monkeypatch.setattr(cli, "_run_review", lambda port, env_file=None: port)
     with pytest.raises(SystemExit) as raised:
         cli.main(["review", "--port", "9124"])
     assert raised.value.code == 9124
 
 
 def test_review_uses_configured_port_without_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli, "load_settings", lambda: Settings(review_port=8123))
-    monkeypatch.setattr(cli, "_run_review", lambda port: port)
+    monkeypatch.setattr(cli, "load_settings", lambda *args: Settings(review_port=8123))
+    monkeypatch.setattr(cli, "_run_review", lambda port, env_file=None: port)
     with pytest.raises(SystemExit) as raised:
         cli.main(["review"])
     assert raised.value.code == 8123
@@ -310,3 +355,21 @@ def test_review_reports_subprocess_failure(
     monkeypatch.setattr(cli.subprocess, "run", fail_run)
     assert cli._run_review(8501) == 1
     assert "could not launch Streamlit" in capsys.readouterr().err
+
+
+def test_review_passes_explicit_env_file_to_child(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = tmp_path / "main.py"
+    entry.touch()
+    env_file = tmp_path / "settings.env"
+    monkeypatch.setattr(cli, "_load_review_app", lambda: entry)
+    called: dict[str, object] = {}
+
+    def fake_run(command: list[str], *, check: bool, env: dict[str, str]) -> SimpleNamespace:
+        called["env"] = env
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    assert cli._run_review(8501, env_file) == 0
+    assert called["env"]["PMARB_ENV_FILE"] == str(env_file)

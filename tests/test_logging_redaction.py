@@ -4,6 +4,7 @@ import logging
 
 import pytest
 
+from pmarb import service
 from pmarb.logging import MASK, RedactingFilter, configure_logging, redact
 
 # Built at runtime so secret scanners do not flag the test source.
@@ -90,3 +91,52 @@ def test_configure_logging_emits_redacted_json() -> None:
     lines = [json.loads(line) for line in stream.getvalue().splitlines()]
     assert lines[0]["level"] == "INFO" and "verysecret" not in lines[0]["msg"]
     assert "leakedkey" not in lines[1]["exc"]
+
+
+def test_rotating_file_logging_keeps_redaction(tmp_path) -> None:
+    root = configure_logging("INFO", log_dir=tmp_path, max_bytes=120, backup_count=2)
+    try:
+        logger = logging.getLogger("pmarb.rotation")
+        for index in range(8):
+            logger.info("record=%s", index)
+            logger.info("Authorization: Bearer secret-token-%s", index)
+    finally:
+        for handler in [h for h in root.handlers if h.get_name() == "pmarb"]:
+            root.removeHandler(handler)
+            handler.close()
+
+    logs = list(tmp_path.glob("pmarb.log*"))
+    assert len(logs) > 1
+    content = "".join(path.read_text() for path in logs)
+    assert "[REDACTED]" in content
+    assert "secret-token" not in content
+    assert all(path.stat().st_size <= 120 for path in logs)
+
+
+def test_configure_logging_uses_log_dir_environment(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("PMARB_LOG_DIR", str(tmp_path))
+    root = configure_logging()
+    try:
+        assert any(
+            getattr(handler, "baseFilename", "").endswith("pmarb.log") for handler in root.handlers
+        )
+    finally:
+        for handler in [h for h in root.handlers if h.get_name() == "pmarb"]:
+            root.removeHandler(handler)
+            handler.close()
+
+
+def test_service_configures_log_dir_before_scan(monkeypatch, tmp_path) -> None:
+    calls = []
+    monkeypatch.setenv("PMARB_LOG_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        service, "configure_logging", lambda **kwargs: calls.append(("log", kwargs))
+    )
+    monkeypatch.setattr(service, "main", lambda argv: calls.append(("main", argv)))
+
+    service.run()
+
+    assert calls == [
+        ("log", {"log_dir": str(tmp_path)}),
+        ("main", ["scan"]),
+    ]

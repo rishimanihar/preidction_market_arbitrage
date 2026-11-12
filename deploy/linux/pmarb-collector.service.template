@@ -1,0 +1,22 @@
+[Unit]
+Description=PMARB market data collector
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO_DIR@
+ExecStart=:/usr/bin/env @DATA_ENV@ @LOG_ENV@ @PYTHON_BIN@ -m pmarb.service
+EnvironmentFile=%h/.config/pmarb/.env
+Restart=on-failure
+RestartSec=60s
+TimeoutStopSec=60s
+KillSignal=SIGTERM
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=@DATA_DIR@
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
