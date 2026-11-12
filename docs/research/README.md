@@ -7,6 +7,6 @@ AI-assisted research (Grok workers, reviewed by the orchestrator) feeding the im
 | kalshi.md | Kalshi API: auth, REST, WebSocket, limits, fees, settlement, orders | done, pending fact-check |
 | prior-art-and-risks.md | Existing bots, PMXT, empirical evidence, regulatory/ToS risk | done, pending fact-check |
 | wire-formats.md | Live response field formats for both venues | done |
-| polymarket-us.md | Polymarket US API in depth | in progress |
-| market-overlap.md | Live Kalshi x Polymarket US pair study | in progress |
-| us-venues.md | Other US-legal venues as third-venue candidates | in progress |
+| polymarket-us.md | Polymarket US API in depth | done, pending fact-check |
+| market-overlap.md | Live Kalshi x Polymarket US pair study | done, pending fact-check |
+| us-venues.md | Other US-legal venues as third-venue candidates | done, pending fact-check |

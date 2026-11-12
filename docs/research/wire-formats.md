@@ -1,6 +1,8 @@
 # Wire formats (live public responses)
 
-Captured 2026-11-12 ~01:38–01:41 UTC with `User-Agent: pmarb-research/0.1` and `Accept: application/json`. No auth headers. Bodies below are the raw JSON files in this directory (not reformatted).
+> Live API values in examples were replaced with synthetic values; formats and field names are accurate.
+
+Captured 2026-11-12 ~01:38–01:41 UTC with `User-Agent: pmarb-research/0.1` and `Accept: application/json`. No auth headers. Shapes below follow the raw JSON files in this directory (not reformatted). Example numbers are synthetic.
 
 Bases checked against the docs:
 
@@ -26,7 +28,7 @@ Failed attempt, then the documented path:
 
 Chosen markets:
 
-- Kalshi detail/series/book: `KXNFLGAME-26NOV22NYJLAC-LAC` (Los Angeles C to win vs New York J, 2026-11-22). Both sides of the book are non-empty (40 yes levels, 37 no levels). Best yes bid `0.5200` size `16416.37`. Series ticker is the prefix `KXNFLGAME` (markets do not carry `series_ticker`).
+- Kalshi detail/series/book: `KXNFLGAME-26NOV22NYJLAC-LAC` (Los Angeles C to win vs New York J, 2026-11-22). Both sides of the book are non-empty (40 yes levels, 37 no levels). Best yes bid e.g. `0.5000` size `100.00`. Series ticker is the prefix `KXNFLGAME` (markets do not carry `series_ticker`).
 - The `limit=5&status=open` page is **not** that market. With no `mve_filter`, the first page is five brand-new multivariate combos (`KXMVECROSSCATEGORY-…`), each with `yes_bid_dollars`/`yes_ask_dollars` `"0.0000"`, sizes `"0.00"`, and `volume_fp` `"0.00"`. A non-empty book required a different ticker. `mve_filter=exclude` is the documented way to skip combos ([Get Markets](https://docs.kalshi.com/api-reference/market/get-markets)).
 - Polymarket US: first row of the active page, slug `tec-mls-winner-2026-11-07-vwh` (Vancouver Whitecaps FC, 2026 MLS Cup). Book state `MARKET_STATE_OPEN`, 11 bids and 13 offers.
 
@@ -42,16 +44,16 @@ There are **no integer cent fields** (`yes_bid`, `last_price`, `volume` as numbe
 
 | Field | JSON type | Example | Meaning |
 | --- | --- | --- | --- |
-| `yes_bid_dollars`, `yes_ask_dollars`, `no_bid_dollars`, `no_ask_dollars` | string | `"0.5200"`, `"0.5400"`, `"0.4600"`, `"0.4800"` | Best yes/no bid and ask, in dollars |
-| `yes_bid_size_fp`, `yes_ask_size_fp` | string | `"16416.37"`, `"225.12"` | Contracts at the best yes bid / yes ask. Fractional contracts are real (not a display artifact) |
-| `last_price_dollars`, `previous_price_dollars`, `previous_yes_bid_dollars`, `previous_yes_ask_dollars` | string | `"0.5200"`, `"0.5600"` | Last yes trade, and prior-day bid/ask/last |
-| `volume_fp`, `volume_24h_fp`, `open_interest_fp` | string | `"969.45"`, `"284.99"`, `"826.45"` | Contract counts, two decimals |
+| `yes_bid_dollars`, `yes_ask_dollars`, `no_bid_dollars`, `no_ask_dollars` | string | `"0.5000"`, `"0.5500"`, `"0.4500"`, `"0.5000"` | Best yes/no bid and ask, in dollars |
+| `yes_bid_size_fp`, `yes_ask_size_fp` | string | `"100.00"`, `"200.50"` | Contracts at the best yes bid / yes ask. Fractional contracts are real (not a display artifact) |
+| `last_price_dollars`, `previous_price_dollars`, `previous_yes_bid_dollars`, `previous_yes_ask_dollars` | string | `"0.5000"`, `"0.4000"` | Last yes trade, and prior-day bid/ask/last |
+| `volume_fp`, `volume_24h_fp`, `open_interest_fp` | string | `"100.00"`, `"50.00"`, `"75.50"` | Contract counts, two decimals |
 | `notional_value_dollars` | string | `"1.0000"` | Payout of one contract |
 | `price_ranges[].start`, `.end`, `.step` | string | `"0.0000"`, `"1.0000"`, `"0.0100"` | Tick grid in dollars. `price_level_structure` is the string `"linear_cent"` (one cent = `"0.0100"` dollars) |
 
 Empty quote on the combo page is the string `"0.0000"`, not JSON `null`. Empty size/volume is `"0.00"`. `result` and `expiration_value` are `""`, not null.
 
-Identity check on the NFL book: `yes_bid_dollars` `"0.5200"` equals the last `yes_dollars` level, and `yes_bid_size_fp` `"16416.37"` equals that level's size. `yes_ask_dollars` `"0.5400"` equals `1 - best no bid`, and `yes_ask_size_fp` `"225.12"` equals the size at no `"0.4600"`.
+Identity check on the NFL book: e.g. `yes_bid_dollars` `"0.5000"` equals the last `yes_dollars` level, and `yes_bid_size_fp` `"100.00"` equals that level's size. `yes_ask_dollars` `"0.5500"` equals `1 - best no bid`, and `yes_ask_size_fp` `"200.50"` equals the size at no `"0.4500"`.
 
 ### Status
 
@@ -72,18 +74,18 @@ Other scalars seen: `market_type` `"binary"`, `strike_type` `"structured"`, `set
 
 ### Expiration / end
 
-All timestamps are RFC3339 strings, `Z` suffix. Fractional seconds appear on creation/update (`2026-11-10T05:03:39.250971Z`, microseconds) and are omitted on some close times (`2026-11-24T21:05:00Z`).
+All timestamps are RFC3339 strings, `Z` suffix. Fractional seconds appear on creation/update (e.g. `2026-01-01T00:00:00.250971Z`, microseconds) and are omitted on some close times (e.g. `2026-01-08T00:00:00Z`).
 
 | Field | NFL example | Role |
 | --- | --- | --- |
-| `open_time` | `2026-11-10T05:06:00Z` | Trading open |
-| `close_time` | `2026-11-24T21:05:00Z` | Scheduled close |
-| `expected_expiration_time` | `2026-11-23T00:05:00Z` | Expected expiration |
-| `expiration_time` | `2026-11-24T21:05:00Z` | Present, documented as deprecated |
-| `latest_expiration_time` | `2026-11-24T21:05:00Z` | Latest possible expiration |
-| `occurrence_datetime` | `2026-11-23T00:05:00Z` | Recorded event time |
-| `updated_time` | `2026-11-10T05:06:00.243247Z` | Last **non-trading** metadata update (docs). It does not move with the book |
-| `created_time` | `2026-11-10T05:03:39.250971Z` | Created |
+| `open_time` | `2026-01-01T00:00:00Z` | Trading open |
+| `close_time` | `2026-01-08T00:00:00Z` | Scheduled close |
+| `expected_expiration_time` | `2026-01-07T00:00:00Z` | Expected expiration |
+| `expiration_time` | `2026-01-08T00:00:00Z` | Present, documented as deprecated |
+| `latest_expiration_time` | `2026-01-08T00:00:00Z` | Latest possible expiration |
+| `occurrence_datetime` | `2026-01-07T00:00:00Z` | Recorded event time |
+| `updated_time` | `2026-01-01T00:00:00.243247Z` | Last **non-trading** metadata update (docs). It does not move with the book |
+| `created_time` | `2026-01-01T00:00:00.250971Z` | Created |
 
 No `end_date` field. Combo markets add `custom_strike` (object of strings, including `Associated Markets`), `mve_collection_ticker`, and `mve_selected_legs[]` with `event_ticker`, `market_ticker`, `side` (`"yes"` / `"no"`). The NFL market's `custom_strike` is `{ "football_team": "<uuid>" }`.
 
@@ -105,10 +107,10 @@ Series wrapper is `{ "series": { ... } }`. Also present: `ticker`, `title`, `cat
 ```
 
 - Only key on the response is `orderbook_fp`. No sibling `orderbook`, no cent arrays.
-- Each level is a JSON array of **two strings**: `[dollars, contract_count_fp]`. Example: `["0.5200", "16416.37"]`. No third “order count” element.
-- Prices: four decimal dollar strings (`"0.0100"` … `"0.5200"`). Sizes: two decimal count strings, including fractional (`"2187348.76"`).
+- Each level is a JSON array of **two strings**: `[dollars, contract_count_fp]`. Example: `["0.5000", "100.00"]`. No third “order count” element.
+- Prices: four decimal dollar strings (`"0.0100"` … `"0.5000"`). Sizes: two decimal count strings, including fractional (e.g. `"1234.56"`).
 - **Bids only.** No ask arrays. A yes bid at price `P` is a no ask at `1 - P` (docs still phrase the complement as `100 - X` cents; the wire complement is `1 - P` dollars).
-- **Ordering on this book: ascending price (worst bid first, best bid last)** on both `yes_dollars` and `no_dollars`. Yes runs `"0.0100"` → `"0.5200"`. No runs `"0.0100"` → `"0.4600"`. The best level is the last element, and it matches `yes_bid_dollars` / `no_bid_dollars`.
+- **Ordering on this book: ascending price (worst bid first, best bid last)** on both `yes_dollars` and `no_dollars`. Yes runs `"0.0100"` → `"0.5000"`. No runs `"0.0100"` → `"0.4500"`. The best level is the last element, and it matches `yes_bid_dollars` / `no_bid_dollars`.
 
 Docs: [Get Market Orderbook](https://docs.kalshi.com/api-reference/market/get-market-orderbook). Schema `PriceLevelDollarsCountFp` matches the live pair of strings. See discrepancies below for the prose that says “best to worst” and “order counts”.
 
@@ -172,10 +174,10 @@ List wrapper: `{ "markets": [ Market, ... ] }`. No cursor in this response. Deta
 
 Two different encodings on one object:
 
-1. **Amount objects** (decimal **strings** + currency), four places in this capture: `bestBidQuote` / `bestAskQuote` = `{ "value": "0.1540", "currency": "USD" }` and `{ "value": "0.1550", "currency": "USD" }`. Same shape as book `px`.
-2. **Bare strings** on each `marketSides[]` entry: `price` `"0.1550"` (long / Yes) and `"0.846"` (short / No). The No side is **three** decimal places, not four. `quote` repeats that as an Amount.
+1. **Amount objects** (decimal **strings** + currency), four places in this capture: `bestBidQuote` / `bestAskQuote` = `{ "value": "0.2500", "currency": "USD" }` and `{ "value": "0.2600", "currency": "USD" }`. Same shape as book `px`.
+2. **Bare strings** on each `marketSides[]` entry: `price` `"0.2600"` (long / Yes) and `"0.750"` (short / No). The No side is **three** decimal places, not four. `quote` repeats that as an Amount.
 3. **JSON numbers**, not strings: `feeCoefficient` `0.095`, `orderPriceMinTickSize` `0.001`, `minimumTradeQty` `1`. Tick size is a tenth of a cent (`0.001`), finer than Kalshi's `"0.0100"` dollar step on the NFL market.
-4. **Deprecated strings that contain JSON text**, not arrays: `outcomes` is the string `["No","Yes"]`. `outcomePrices` is the string `["0.1550","0.846"]`. Zipping them labels No=`0.1550` and Yes=`0.846`, which is the **opposite** of `marketSides` (Yes long `0.1550`, No short `0.846`). `0.846` equals `1 - 0.1540` (the bid), while `0.1550` equals the ask. Do not zip `outcomes` to `outcomePrices`.
+4. **Deprecated strings that contain JSON text**, not arrays: `outcomes` is the string `["No","Yes"]`. `outcomePrices` is the string `["0.2600","0.750"]`. Zipping them labels No=`0.2600` and Yes=`0.750`, which is the **opposite** of `marketSides` (Yes long `0.2600`, No short `0.750`). `0.750` equals `1 - 0.2500` (the bid), while `0.2600` equals the ask. Do not zip `outcomes` to `outcomePrices`.
 
 `marketSides[]` (this market has two):
 
@@ -188,8 +190,8 @@ Two different encodings on one object:
 | `description` | string | `"Yes"` | `"No"` |
 | `long` | boolean | `true` | `false` |
 | `tradable` | boolean | `true` | `true` |
-| `price` | string | `"0.1550"` | `"0.846"` |
-| `quote` | Amount | value `"0.1550"` | value `"0.846"` |
+| `price` | string | `"0.2600"` | `"0.750"` |
+| `quote` | Amount | value `"0.2600"` | value `"0.750"` |
 
 Top-level `id` is the **string** `"7974"`, while `marketSides[].marketId` is the number `7974`.
 
@@ -223,12 +225,12 @@ RFC3339, whole seconds, `Z`:
 
 | Field | Example |
 | --- | --- |
-| `startDate` | `2026-03-19T21:25:04Z` |
-| `endDate` | `2027-01-01T21:20:09Z` |
-| `gameStartTime` | `2026-02-21T00:00:00Z` (deprecated in the schema; still present) |
-| `createdAt` | `2026-03-19T21:31:54Z` |
-| `updatedAt` | `2026-11-12T01:39:21Z` |
-| `ep3SyncedAt` | `2026-10-29T12:04:57Z` |
+| `startDate` | `2026-01-01T00:00:00Z` |
+| `endDate` | `2026-06-01T00:00:00Z` |
+| `gameStartTime` | `2026-02-01T00:00:00Z` (deprecated in the schema; still present) |
+| `createdAt` | `2026-01-01T00:01:00Z` |
+| `updatedAt` | `2026-01-02T00:00:00Z` |
+| `ep3SyncedAt` | `2026-01-01T12:00:00Z` |
 
 `endDate` is the market end. For automated crypto markets the docs say use `assetPriceTerms.windowEnd` instead; this sports market has `assetPriceTerms: null`.
 
@@ -244,30 +246,30 @@ Path: [Get Market Book](https://docs.polymarket.us/api-reference/markets/get-mar
 
 Level: `{ "px": { "value": "<decimal string>", "currency": "USD" }, "qty": "<decimal string>" }`.
 
-- `px.value`: dollars, four decimal places here (`"0.1540"`, `"0.1550"`, `"0.9990"`).
-- `qty`: contract size string, four decimal places even when whole (`"343.0000"`, `"1.0000"`, `"250000.0000"`).
-- **Bids: descending price (best / highest first).** First `"0.1540"` qty `"343.0000"`, last `"0.0010"` qty `"250000.0000"`.
-- **Offers: ascending price (best / lowest first).** First `"0.1550"` qty `"685.0000"`, last `"0.9990"` qty `"249999.0000"`.
+- `px.value`: dollars, four decimal places here (`"0.2500"`, `"0.2600"`, `"0.9000"`).
+- `qty`: contract size string, four decimal places even when whole (`"100.0000"`, `"2.0000"`, `"300.0000"`).
+- **Bids: descending price (best / highest first).** (synthetic, truncated) First `"0.2500"` qty `"100.0000"`, last `"0.1000"` qty `"200.0000"`.
+- **Offers: ascending price (best / lowest first).** (synthetic, truncated) First `"0.2600"` qty `"150.0000"`, last `"0.9000"` qty `"300.0000"`.
 - This matches the docs: “highest bid first, lowest ask first” ([Markets WebSocket](https://docs.polymarket.us/api-reference/websocket/markets) order-book section, same level shape as REST).
 
 `state`: `"MARKET_STATE_OPEN"`. Book-state enum (not the same as market `status`): `MARKET_STATE_OPEN`, `MARKET_STATE_PREOPEN`, `MARKET_STATE_SUSPENDED`, `MARKET_STATE_HALTED`, `MARKET_STATE_EXPIRED`, `MARKET_STATE_TERMINATED`, `MARKET_STATE_MATCH_AND_CLOSE_AUCTION`.
 
-`transactTime`: RFC3339 with **nanoseconds**, `"2026-11-12T01:40:06.545601376Z"`.
+`transactTime`: RFC3339 with **nanoseconds**, e.g. `"2026-01-01T00:00:00.123456789Z"`.
 
 `stats` prices are Amounts. Sizes are strings. Captured fields:
 
 | Field | Type | Example |
 | --- | --- | --- |
-| `openPx`, `closePx`, `lowPx`, `highPx`, `lastTradePx`, `settlementPx`, `currentPx` | Amount | last trade `{ "value": "0.1550", "currency": "USD" }`; `currentPx` `"0.1545"` (mid of 0.1540/0.1550) |
-| `sharesTraded`, `openInterest`, `lastTradeQty` | string, 4 decimals | `"3626164.0000"`, `"121250.0000"`, `"1.0000"` |
-| `notionalTraded` | Amount | `"816259.1860"` USD |
+| `openPx`, `closePx`, `lowPx`, `highPx`, `lastTradePx`, `settlementPx`, `currentPx` | Amount | last trade `{ "value": "0.2600", "currency": "USD" }`; `currentPx` `"0.2550"` (mid of 0.2500/0.2600) |
+| `sharesTraded`, `openInterest`, `lastTradeQty` | string, 4 decimals | `"1000.0000"`, `"500.0000"`, `"2.0000"` |
+| `notionalTraded` | Amount | `"100.5000"` USD |
 | `*SetTime` (`open`, `close`, `high`, `low`, `lastTrade`, `settlement`, `openInterest`, `notional`) | string | nanosecond RFC3339 |
 | `settlementPriceCalculationMethod` | string | `"SETTLEMENT_PRICE_CALCULATION_METHOD_EVENT_TIER_2"` |
-| `lastPriceSample` | object | `longPx` Amount `"0.1550"`, `shortPx` Amount `"0.845"` (**3** decimals), `ts` nanosecond RFC3339 |
+| `lastPriceSample` | object | `longPx` Amount `"0.2600"`, `shortPx` Amount `"0.740"` (**3** decimals), `ts` nanosecond RFC3339 |
 
-`settlementPx` is filled (`"0.2240"`) while `state` is still `MARKET_STATE_OPEN`, so on this market it is not “present only after resolution”. Schema fields `indicativeOpenPx` and `settlementPreliminaryFlag` were absent.
+`settlementPx` is filled (e.g. `"0.3000"`) while `state` is still `MARKET_STATE_OPEN`, so on this market it is not “present only after resolution”. Schema fields `indicativeOpenPx` and `settlementPreliminaryFlag` were absent.
 
-`shortPx` `"0.845"` equals `1 - 0.155` and does not use the four-decimal form `"0.8450"`. Same inconsistency as `marketSides[].price` for No (`"0.846"`).
+`shortPx` `"0.740"` equals `1 - 0.260` and does not use the four-decimal form `"0.7400"`. Same inconsistency as `marketSides[].price` for No (`"0.750"`).
 
 ---
 
@@ -285,7 +287,7 @@ Auth is required, so shapes are from [Markets WebSocket](https://docs.polymarket
 
 `subscriptionType` also: `SUBSCRIPTION_TYPE_MARKET_DATA_LITE`, `SUBSCRIPTION_TYPE_TRADE`. Optional `responsesDebounced: true`. Max 100 slugs per subscription.
 
-- Full market-data push: `{ "requestId", "subscriptionType": "SUBSCRIPTION_TYPE_MARKET_DATA", "marketData": { ... } }`. `marketData` matches the REST book: `marketSlug`, `bids[]`, `offers[]` (`px` Amount + `qty` string), `state` (`MARKET_STATE_*`), `stats` (`lastTradePx` Amount, `sharesTraded` string, `openInterest` string, `highPx`, `lowPx`), `transactTime`. Doc example qty values are short strings (`"0.50"`, `"150000"`), not the four-decimal `"343.0000"` the REST book returned.
+- Full market-data push: `{ "requestId", "subscriptionType": "SUBSCRIPTION_TYPE_MARKET_DATA", "marketData": { ... } }`. `marketData` matches the REST book: `marketSlug`, `bids[]`, `offers[]` (`px` Amount + `qty` string), `state` (`MARKET_STATE_*`), `stats` (`lastTradePx` Amount, `sharesTraded` string, `openInterest` string, `highPx`, `lowPx`), `transactTime`. Doc example qty values are short strings (`"0.50"`, `"150000"`), not the four-decimal `"100.0000"` the REST book returned.
 - Lite push: `marketDataLite` with `currentPx`, `lastTradePx`, `bestBid`, `bestAsk` (Amounts), `bidDepth` / `askDepth` (integers), `sharesTraded`, `openInterest` (strings).
 - Trade push: `trade.price` Amount, `trade.quantity` Amount (currency on the quantity, unlike book `qty` which is a bare string), `tradeTime`, `maker` / `taker` `{ "side": "ORDER_SIDE_BUY"|"ORDER_SIDE_SELL", "intent": "ORDER_INTENT_BUY_LONG"|"ORDER_INTENT_SELL_LONG"|"ORDER_INTENT_BUY_SHORT"|"ORDER_INTENT_SELL_SHORT" }`.
 
@@ -299,11 +301,11 @@ Auth is required, so shapes are from [Markets WebSocket](https://docs.polymarket
 4. **Kalshi cent language in prose.** The orderbook page still explains the complement as “a yes bid at 7¢ is the same as a no ask at 93¢” and “100−X”. The wire is dollar strings, and the complement is `1 - price`. Schema text is already in dollars (`"0.1500"`). No cent integers were returned.
 5. **Kalshi `fee_multiplier`.** Schema `format: double`. Live JSON encodes a whole multiplier as `1`, not `1.0` and not a string. `fee_type` string matches the documented enum.
 6. **Polymarket market-by-slug path.** `GET /v1/markets/{slug}` is 404 (`code` 5). The working route is `GET /v1/market/slug/{slug}`. The book route keeps the plural: `GET /v1/markets/{slug}/book`.
-7. **Polymarket price precision is not fixed at four places inside one payload.** Bid/ask quotes and long `price` are `"0.1540"` / `"0.1550"`. Short side `price` and `quote.value` are `"0.846"`. Book `lastPriceSample.shortPx.value` is `"0.845"`. `outcomePrices` embeds both `"0.1550"` and `"0.846"`, and its order does not follow `outcomes` (`["No","Yes"]`).
+7. **Polymarket price precision is not fixed at four places inside one payload.** Bid/ask quotes and long `price` are `"0.2500"` / `"0.2600"`. Short side `price` and `quote.value` are `"0.750"`. Book `lastPriceSample.shortPx.value` is `"0.740"`. `outcomePrices` embeds both `"0.2600"` and `"0.750"`, and its order does not follow `outcomes` (`["No","Yes"]`).
 8. **Polymarket `id` vs `marketId`.** `market.id` is a string (`"7974"`). `marketSides[].marketId` is a JSON number (`7974`).
 9. **Polymarket numeric fields the schema marks `format: decimal`.** `feeCoefficient`, `orderPriceMinTickSize`, and `minimumTradeQty` arrived as JSON numbers (`0.095`, `0.001`, `1`), not decimal strings. Book prices and qtys are strings.
-10. **Polymarket volume fields omitted.** Schema lists `volume` / `volume24hr` / `volume1wk` / `volume1mo` / `volume1yr`. None were present on this active, traded market (the book shows `sharesTraded` `"3626164.0000"`). `rulesDisclaimer` omitted, which the docs allow.
+10. **Polymarket volume fields omitted.** Schema lists `volume` / `volume24hr` / `volume1wk` / `volume1mo` / `volume1yr`. None were present on this active, traded market (the book shows `sharesTraded` e.g. `"1000.0000"`). `rulesDisclaimer` omitted, which the docs allow.
 11. **Polymarket book `settlementPx` on an open market.** Present with `SETTLEMENT_PRICE_CALCULATION_METHOD_EVENT_TIER_2` while `state` is `MARKET_STATE_OPEN`. `indicativeOpenPx` and `settlementPreliminaryFlag` from the schema were absent. Extra live stats vs the fields highlighted in the overview example: `currentPx`, `lastPriceSample`, `settlementPriceCalculationMethod`, and the `*SetTime` timestamps (nanosecond precision; the overview example uses millisecond `2025-01-20T12:30:45.123Z`).
 12. **Polymarket market object has fields not in the published Market property list used here:** `eventSubcategory`, `politics` (null), `singlesRfqConfig`. `sportsMarketType` value `"futures"` is not one of the `SPORTS_MARKET_TYPE_*` enum values; that enum is on `sportsMarketTypeV2`.
-13. **Book overview sample vs live qty.** [Markets API Overview](https://docs.polymarket.us/api-reference/market/overview) shows `qty` like `"750"` and prices like `"0.54"`. This book uses four-decimal qty `"685.0000"` and four-decimal prices `"0.1550"`.
+13. **Book overview sample vs live qty.** [Markets API Overview](https://docs.polymarket.us/api-reference/market/overview) shows `qty` like `"750"` and prices like `"0.54"`. This book uses four-decimal qty `"150.0000"` and four-decimal prices `"0.2600"`.
 14. **Two status enums.** Market resource uses `MARKET_STATUS_OPEN`. Book and WS market data use `MARKET_STATE_OPEN`. `ep3Status` uses a third spelling, `OPEN`.

@@ -1,6 +1,8 @@
 # Kalshi API research (observation, then later execution)
 
-**Fetched:** 2026-11-12 (HTTP `date` on live responses, for example `Thu, 12 Nov 2026 01:48:04 GMT`).
+> Live API values in examples were replaced with synthetic values; formats and field names are accurate.
+
+**Fetched:** 2026-11-12 (HTTP `date` on live responses, for example `Thu, 01 Jan 2026 00:00:00 GMT`).
 **Spec revision read:** OpenAPI `info.version` **3.36.0** and the matching AsyncAPI download.
 **Method:** `llms.txt` / `llms-full.txt`, the Markdown docs, `openapi.yaml`, `asyncapi.yaml`, unauthenticated `GET`s against production and demo, PyPI metadata, and the official sync wheel. User-Agent `pmarb-research/0.1`. No account, no orders.
 **Confidence labels:** **VERIFIED** means read in a primary doc downloaded this session or observed on a live response. **INFERRED** means a mechanical reading of those sources. **UNKNOWN** means the source was missing, blocked, or silent.
@@ -15,7 +17,7 @@ Raw pages are in `sources/`. Live response excerpts are in `sources/live/`.
 
 | Plan claim | Status | What the current sources say |
 |---|---|---|
-| REST books are YES/NO bids; YES ask = `1 −` best NO bid | **VERIFIED for REST**, and for WebSocket only when `use_yes_price` is false | Live `KXNBAGAME-26NOV11CLENYK-CLE`: best NO bid `0.6200` and market `yes_ask_dollars` `0.3800`. With `use_yes_price: true`, that same NO level is sent as `0.70` on the YES scale. Complementing it again yields the NO price, not the YES ask. |
+| REST books are YES/NO bids; YES ask = `1 −` best NO bid | **VERIFIED for REST**, and for WebSocket only when `use_yes_price` is false | e.g. on `KXNBAGAME-26NOV11CLENYK-CLE`: best NO bid `0.6000` and market `yes_ask_dollars` `0.4000`. With `use_yes_price: true`, that same NO level is sent as `0.4000` on the YES scale. Complementing it again yields the NO price, not the YES ask. |
 | Prefer `use_yes_price=true` and do not complement twice | **VERIFIED as the right future default; the flag still defaults to false** | Set it explicitly. The docs say the default will flip to `true` later, then the flag will be removed. No date is published. |
 | Sequence gap: invalidate, fetch a fresh snapshot, do not treat a repeated `subscribe` as a resync | **VERIFIED**, and more specific than the plan | Recovery command is `update_subscription` action `get_snapshot` for every subscribed ticker, or `unsubscribe`, wait for `unsubscribed`, then `subscribe`. `seq` is per subscription. `clock` is a per-market exchange clock and is not a gap detector. |
 | Channel name `market_lifecycle` | **WRONG name** | The channel is `market_lifecycle_v2`. Combos use `multivariate_market_lifecycle`. Neither accepts a market filter. |
@@ -23,8 +25,8 @@ Raw pages are in `sources/`. Live response excerpts are in `sources/live/`.
 | Standard taker fee `0.07 × multiplier × q × p × (1−p)` | **NOT re-verified** | The schedule PDF and `https://kalshi.com/fee-schedule` returned HTTP 429 (Vercel checkpoint), so the coefficient was not read. Series metadata does name the fee *structure* and maker multipliers `0.25` and `0.5`. |
 | Worked example fee `$1.7325` under direct-member rounding | **Consistent with the rounding doc if the model fee is exactly `$1.7325`** | Direct-member `$0.0001` alignment adds `$0` of rounding on that input. The same input under non-direct `$0.01` alignment adds `$0.0075` of rounding fee. Account type is still unknown until a key exists. |
 | Kalshi may not have a usable read-only key | **OUTDATED** | Scope `read` grants all read endpoints. Broad `write` cannot be granted unless `read` is included. Omitting `scopes` still means full access. Whether a `read` key may open the WebSocket is **UNKNOWN**. |
-| Discovery horizon from expected resolution, using close-time filters | **MISSING an API limitation** | There is no `expected_expiration_time` query. `min_close_ts` / `max_close_ts` are a different clock. Live soccer market `KXESOCCERGAME-26NOV112337EDERFEDE-TIE`: expected expiration `2026-11-12T07:37:00Z`, close `2026-11-26T04:37:00Z`. A seven-day **close** window drops it. |
-| Integer cent prices and whole contracts | **OUTDATED** | Live books and trades use fixed-point dollar strings and fixed-point counts. A public trade on `KXNBAGAME-26NOV11CLENYK-CLE` had `count_fp` `"58.55"`. `fractional_trading_enabled` is gone from responses. |
+| Discovery horizon from expected resolution, using close-time filters | **MISSING an API limitation** | There is no `expected_expiration_time` query. `min_close_ts` / `max_close_ts` are a different clock. Live soccer market `KXESOCCERGAME-26NOV112337EDERFEDE-TIE`: e.g. expected expiration `2026-01-02T00:00:00Z`, close `2026-01-16T00:00:00Z`. A seven-day **close** window drops it. |
+| Integer cent prices and whole contracts | **OUTDATED** | Live books and trades use fixed-point dollar strings and fixed-point counts. A public trade on `KXNBAGAME-26NOV11CLENYK-CLE` had a fractional `count_fp` such as `"12.34"`. `fractional_trading_enabled` is gone from responses. |
 | Official Python SDK as a possible client | **MISSING constraints** | `kalshi_python_sync` / `kalshi_python_async` **3.36.0** (uploaded 2026-11-11) require **Python ≥ 3.13**, are OpenAPI REST clients, and have **no WebSocket client**. License `LicenseRef-Proprietary`. The plan’s runtime is Python 3.12. |
 | Public market `GET` is fresh enough to police a two-second book | **MISSING cache behavior** | `GET /markets?status=open` returned `cache-control: public, max-age=15`. Single-market `GET`s returned `x-kalshi-cache-hits: 1` and no `Cache-Control`. Back-to-back with the order book, prices matched and **sizes did not**. |
 | `GET /series` cursor pagination at `limit` 100 | **WRONG as observed** | `GET /series?limit=1` returned **16,231** series, no `cursor` key. |
@@ -66,7 +68,7 @@ Sources: [API Keys](https://docs.kalshi.com/getting_started/api_keys), [Quick St
 - `POST /trade-api/v2/api_keys` registers a PEM public key you generate. The description limits this to **Premier or Market Maker** usage levels. RSA-PSS SHA-256 or Ed25519. **VERIFIED.**
 - `POST /trade-api/v2/api_keys/generate` mints a key pair. `key_type` omitted means RSA. The private key is returned once. **VERIFIED.**
 - Own-key generation commands in the docs: `openssl genpkey -algorithm ed25519` or `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048`. **VERIFIED.**
-- PKCS#8 RSA and Ed25519 both use `BEGIN PRIVATE KEY`. Detect type from the parsed key, not the header. **VERIFIED.**
+- PKCS#8 RSA and Ed25519 keys share the same generic PKCS#8 PEM header. Detect type from the parsed key, not the header. **VERIFIED.**
 
 ### Signing string and headers
 
@@ -215,9 +217,9 @@ Only one `status` filter. `status=all` is invalid (live HTTP 400). **VERIFIED.**
 
 Live illustrations:
 
-- `KXESOCCERGAME-26NOV112337EDERFEDE-TIE`: `expected_expiration_time` `2026-11-12T07:37:00Z`, `close_time` `2026-11-26T04:37:00Z`, `can_close_early` true, `settlement_timer_seconds` **180**.
-- `KXNBAGAME-26NOV11CLENYK-CLE`: expected `2026-11-12T03:00:00Z`, close `2026-11-14T00:00:00Z`, timer **45**, early-close text “after a winner is declared”.
-- Settled `KXNCAAMBTOTAL-26NOV11COFCTEM-184`: closed early at `2026-11-12T01:40:03Z`, `settlement_ts` `2026-11-12T01:44:06.20922Z`, while `expected_expiration_time` was still `2026-11-12T05:30:00Z`. Payout was about four minutes after the early close, not at the expected expiration. **VERIFIED.**
+- `KXESOCCERGAME-26NOV112337EDERFEDE-TIE`: e.g. `expected_expiration_time` `2026-01-02T00:00:00Z`, `close_time` `2026-01-16T00:00:00Z`, `can_close_early` true, `settlement_timer_seconds` **180**.
+- `KXNBAGAME-26NOV11CLENYK-CLE`: e.g. expected `2026-01-03T00:00:00Z`, close `2026-01-05T00:00:00Z`, timer **45**, early-close text “after a winner is declared”.
+- Settled `KXNCAAMBTOTAL-26NOV11COFCTEM-184`: e.g. closed early at `2026-01-01T00:00:03Z`, `settlement_ts` `2026-01-01T00:04:06.20922Z`, while `expected_expiration_time` was still `2026-01-01T04:00:00Z`. Payout was about four minutes after the early close, not at the expected expiration. **VERIFIED.**
 
 ### Close-time filters
 
@@ -232,7 +234,7 @@ Live illustrations:
 
 Timestamps are Unix **seconds**. `min_updated_ts` tracks non-trading metadata changes, not trades.
 
-The published table does not list `status=open` with `min_close_ts`/`max_close_ts`. A live request `status=open` plus a seven-day close window returned HTTP 200 and an `active` market inside that window (`KXAUDUSDEVENT-18NOV262030-T07120`, close `2026-11-19T01:30:00Z`). **VERIFIED** for that one call. Treat the compatibility table as incomplete relative to that observation, and still do not use close time as expected resolution.
+The published table does not list `status=open` with `min_close_ts`/`max_close_ts`. A live request `status=open` plus a seven-day close window returned HTTP 200 and an `active` market inside that window (`KXAUDUSDEVENT-18NOV262030-T07120`, close e.g. `2026-01-06T01:30:00Z`). **VERIFIED** for that one call. Treat the compatibility table as incomplete relative to that observation, and still do not use close time as expected resolution.
 
 There is **no** server filter on `expected_expiration_time`. **VERIFIED** by the parameter list.
 
@@ -255,37 +257,37 @@ On **event**: `series_ticker`, `title`, `sub_title`, `collateral_return_type`, `
 **VERIFIED** in the fixed-point page, the Market schema, and live bodies.
 
 - Prices are `*_dollars` strings, up to 4 decimal places (`"0.4100"`). Integer cent fields (`yes_bid`, `last_price`, …) were removed from the schema (changelog release date 2026-01-15) and were absent on live markets.
-- Counts are `*_fp` strings. Requests accept 0–2 decimal places. Responses always emit 2 (`"11104.43"`). Minimum grain 0.01 contract. If both integer `count` and `count_fp` are sent, they must match.
+- Counts are `*_fp` strings. Requests accept 0–2 decimal places. Responses always emit 2 (e.g. `"100.50"`). Minimum grain 0.01 contract. If both integer `count` and `count_fp` are sent, they must match.
 - `notional_value_dollars` is the contract payout value. Live binaries were `"1.0000"`.
 - Top of book on the market object: `yes_bid_dollars`, `yes_ask_dollars`, `no_bid_dollars`, `no_ask_dollars`, `yes_bid_size_fp`, `yes_ask_size_fp`, `last_price_dollars`, previous-day counterparts, `volume_fp`, `volume_24h_fp`, `open_interest_fp`.
 - Valid prices come from `price_ranges[]` of `{start, end, step}` in dollars. `price_level_structure` is a label only. Documented labels include `linear_cent` (whole cent), `deci_cent`, tapered and center/edge structures down to `$0.0001`. Whole cents are valid on every structure. Combos are documented as `center_deci_edge_centi_cent` after the 2026-09-03 migration. Live NBA, esoccer, and the settled total were all `linear_cent` with step `0.0100` from `0.0000` to `1.0000`.
-- Changelog 2026-04-17 and 2026-07-09: `fractional_trading_enabled` no longer carries information and is removed from responses. Treat every active market as able to trade fractional contracts. Live trade `count_fp` `"58.55"` and open interest `"1276889.09"` confirm fractional sizes are live. **VERIFIED.**
+- Changelog 2026-04-17 and 2026-07-09: `fractional_trading_enabled` no longer carries information and is removed from responses. Treat every active market as able to trade fractional contracts. A live trade `count_fp` such as `"12.34"` and open interest such as `"1000.00"` confirm fractional sizes are live. **VERIFIED.**
 
 ### Order book
 
 `GET /markets/{ticker}/orderbook` and `GET /markets/orderbooks` (1–100 tickers). No auth required for a successful read (live 200). The OpenAPI response list includes 401; an unauthenticated call did not produce it.
 
-**VERIFIED** shape:
+**VERIFIED** shape (synthetic, truncated):
 
 ```json
-{"orderbook_fp": {"yes_dollars": [["0.3900", "3484.62"], ["0.4000", "13014.76"]],
-                  "no_dollars":  [["0.5800", "22875.19"], ["0.5900", "13353.68"]]}}
+{"orderbook_fp": {"yes_dollars": [["0.4000", "100.00"], ["0.5000", "200.50"]],
+                  "no_dollars":  [["0.4000", "150.00"], ["0.4500", "300.25"]]}}
 ```
 
 Each level is `[price_dollars, count_fp]`, both strings. The prose still says “order counts”; the schema and the live body are a 2-tuple. There is no separate order-count element.
 
 `depth`: integer 0–100, default 0. `0` means every level. `101` returned HTTP 400 (`Depth` failed `max`). **VERIFIED.**
 
-Sort order: the getting-started page says **ascending price, best bid last**. OpenAPI prose says “best to worst.” Live `KXNBAGAME` book (40 YES levels, 59 NO levels) was strictly ascending. `depth=3` kept the **three highest** prices, still ascending, best last (`yes` tail `0.4000`, `no` tail `0.5900` on the earlier snapshot). **VERIFIED.** Implement “best = last element,” which matches the getting-started page and the live book. The OpenAPI sentence does not describe that array order.
+Sort order: the getting-started page says **ascending price, best bid last**. OpenAPI prose says “best to worst.” Live `KXNBAGAME` book (40 YES levels, 59 NO levels) was strictly ascending. `depth=3` kept the **three highest** prices, still ascending, best last (e.g. `yes` tail `0.5000`, `no` tail `0.4500` on the earlier snapshot). **VERIFIED.** Implement “best = last element,” which matches the getting-started page and the live book. The OpenAPI sentence does not describe that array order.
 
 Complement, REST and default WebSocket scale:
 
 - YES ask price = `1 −` best NO bid price, size = that NO bid’s count
 - NO ask price = `1 −` best YES bid price, size = that YES bid’s count
 
-On the paired fetch, `yes_ask_dollars` `0.3800` equaled `1 − 0.6200`. **VERIFIED.**
+On the paired fetch, e.g. `yes_ask_dollars` `0.4000` equaled `1 − 0.6000`. **VERIFIED.**
 
-Sizes did **not** match on that same pair of calls: market `yes_bid_size_fp` `32692.30` versus book `35548.59`; market `yes_ask_size_fp` `26957.86` versus best NO size `42543.93`. The market response had `x-kalshi-cache-hits: 1`. The order book response had no cache-hit header and no `Cache-Control`. **VERIFIED** observation. **INFERRED:** the market object’s size can be a cached quote and is not the book. Qualify from the order book, not from `yes_bid_size_fp`.
+Sizes did **not** match on that same pair of calls: e.g. market `yes_bid_size_fp` `100.00` versus book `150.50`; market `yes_ask_size_fp` `200.00` versus best NO size `250.25`. The market response had `x-kalshi-cache-hits: 1`. The order book response had no cache-hit header and no `Cache-Control`. **VERIFIED** observation. **INFERRED:** the market object’s size can be a cached quote and is not the book. Qualify from the order book, not from `yes_bid_size_fp`.
 
 `GET /markets` list responses carried `cache-control: public, max-age=15`. The 2026-11-12 changelog says `GET /markets/{ticker}` and `GET /events/{event_ticker}` send `Cache-Control: public, max-age=5`. Those two responses this session did not include `Cache-Control`. **VERIFIED** both the changelog sentence and the headers that were actually returned.
 
@@ -544,7 +546,7 @@ Sources: [Market Settlement](https://docs.kalshi.com/getting_started/market_sett
 - Simple yes/no settlement fees are zero. Sub-cent **scalar** settlement may charge a fee. The payout figure named `CollateralAmountChange` is rounded to whole cents, and `CollateralAmountChange + MiscFeeAmt` equals the pre-rounding settlement value. That wording is on the settlement page and points at FIX for the message layout.
 - `result`: `yes`, `no`, `scalar`, or `""` while unresolved.
 - `settlement_value_dollars`: YES/LONG payout per contract, filled after determination. Live finalized `result: "no"` market had `settlement_value_dollars: "0.0000"` and `notional_value_dollars: "1.0000"`. **VERIFIED.**
-- `expiration_value`: the value used for settlement (live `"172"` against `floor_strike` 183.5, `strike_type` `greater`, result `no`).
+- `expiration_value`: the value used for settlement (e.g. `"100"` against `floor_strike` 150.5, `strike_type` `greater`, result `no`).
 - Timer: after determination the market stays `determined` for `settlement_timer_seconds`. Dispute can still change the result. Then REST `finalized` and WebSocket `settled`. Portfolio `Settlement.settled_time` is when payouts were processed. `Settlement.revenue` is integer **cents**. `Settlement.value` is nullable “payout of a single yes contract in cents.” `fee_cost` is a fixed-point dollar string. **VERIFIED** in the schema. Portfolio settlements require auth and were not fetched.
 - The settlement page says markets “typically settle shortly after expiration,” and that timing varies with market type, source availability, and manual review. There is **no** guaranteed payout SLA in the API. **VERIFIED.**
 - Help “Timeline and Payout” says the UI shows open, close, and expected payout, and that some markets close when the outcome occurs rather than at a listed clock. It does not add a machine-readable payout deadline beyond the API fields. **VERIFIED.**
@@ -707,13 +709,13 @@ The Python 3.12 collector should sign requests itself with `cryptography` and sp
 **Tests.**
 
 1. `test_sign_strips_query_and_uses_root_path`: message is `1703123456789GET/trade-api/v2/portfolio/orders` for a URL whose query is `?limit=5`. Ed25519 and RSA-PSS vectors (known PEM, known signature).
-2. `test_rest_complement`: fixture of the live NBA tail. Best YES bid `0.4000`, best NO bid `0.5900` ⇒ YES ask `0.4100`, NO ask `0.6000`, sizes taken from the NO and YES bids respectively.
+2. `test_rest_complement`: fixture of the live NBA tail. Best YES bid `0.5000`, best NO bid `0.4500` ⇒ YES ask `0.5500`, NO ask `0.5000`, sizes taken from the NO and YES bids respectively.
 3. `test_ws_use_yes_price_does_not_double_complement`: NO delta `price_dollars=0.70`, `side=no`, `use_yes_price=true` becomes a YES ask at `0.70`, not at `0.30`.
 4. `test_seq_gap_discards_delta`: snapshot `seq=2`, next applied message `seq=4` leaves the book invalid and emits no qualified price. After a snapshot replacement, the following `seq` applies.
 5. `test_depth_keeps_best_tail`: ascending 40-level fixture, `depth=3` equals the last three levels.
 6. `test_fee_rounding_matches_docs`: example 1 numbers (`0.003639` / `0.001361` / `−0.06`) and example 3 direct-member numbers (`0.000061` / `−0.0587`).
 7. `test_fee_unknown_coefficient_not_qualified`: missing `KALSHI_QUADRATIC_COEFFICIENT` or missing member precision ⇒ profit is scenario-only.
-8. `test_fractional_count`: book level `"10.25"` and trade `"58.55"` survive as `Decimal` and are not truncated to `int`.
+8. `test_fractional_count`: book level `"10.25"` and trade `"12.34"` survive as `Decimal` and are not truncated to `int`.
 9. `test_status_filter_rejects_all`: client maps internal “any” to an omitted `status`, never `status=all`.
 10. `test_expected_expiration_not_close_time`: the esoccer pair of timestamps stays inside a 7-day expected-resolution window and outside a 7-day close window.
 11. `test_settlement_value_yes_side`: `result=no`, `settlement_value_dollars=0` pays the NO holder `1` and the YES holder `0`.
