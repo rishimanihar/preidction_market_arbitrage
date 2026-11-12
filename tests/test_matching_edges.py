@@ -10,18 +10,24 @@ from pmarb.models import Venue
 from tests.test_matching import kalshi, poly
 
 
-@pytest.mark.parametrize("label", ["New York", "Unknown Club", "New York Jets"])
-def test_kalshi_explicit_bad_yes_label_is_not_overridden_by_ticker(label):
+@pytest.mark.parametrize(
+    ("label", "accepted"),
+    [("New York", True), ("Unknown Club", True), ("New York Jets", False)],
+)
+def test_kalshi_yes_label_corroborates_or_conflicts_with_ticker(label, accepted):
     market = kalshi("NYG", label)
     diagnostics = []
-    assert normalize_market(market, diagnostics=diagnostics) is None
-    assert diagnostics
+    normalized = normalize_market(market, diagnostics=diagnostics)
+    assert (normalized is not None) is accepted
+    if accepted:
+        assert normalized.yes_participant == "nfl:NYG"
+    else:
+        assert diagnostics
 
 
-@pytest.mark.parametrize("opponent", ["Unknown Club", "New York Jets Unknown Club"])
-def test_unknown_matchup_label_is_not_overridden_by_ticker(opponent):
+def test_known_conflicting_matchup_label_is_not_overridden_by_ticker():
     market = kalshi(
-        "NYG", "New York Giants", title_override=f"New York Giants vs {opponent} Winner?"
+        "NYG", "New York Giants", title_override="New York Giants vs Buffalo Bills Winner?"
     )
     diagnostics = []
     assert normalize_market(market, diagnostics=diagnostics) is None

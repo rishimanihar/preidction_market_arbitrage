@@ -33,7 +33,7 @@ def kalshi(
     league="nfl",
     event_code="30JAN06NYGNYJ",
     start="2030-01-06T18:00:00Z",
-    rules="",
+    rules=None,
     title_override=None,
     expiration_hint=None,
 ):
@@ -44,6 +44,8 @@ def kalshi(
         "ncaamb": "KXNCAAMBGAME",
         "ncaawb": "KXNCAAWBGAME",
     }[league]
+    if rules is None:
+        rules = "The game is scheduled for January 6, 2030."
     ticker = f"{series}-{event_code}-{team_code}"
     title = title_override or f"{yes_label} vs {opponent_label} winner"
     return Market(
@@ -204,14 +206,19 @@ def test_womens_marker_does_not_match_mens_league():
     assert normalized.yes_participant == "ncaawb:ALA"
 
 
-def test_invalid_explicit_yes_label_is_not_overridden_by_valid_ticker_code():
-    market = kalshi("NYG", "Mystery Team")
-    diagnostics = []
-    assert normalize_market(market, diagnostics=diagnostics) is None
-    assert diagnostics
+def test_unknown_yes_label_can_be_ignored_when_ticker_supplies_identity():
+    market = kalshi(
+        "NYG",
+        "Mystery Team",
+        title_override="New York Giants vs New York Jets winner",
+    )
+    normalized = normalize_market(market)
+    assert normalized is not None
+    assert normalized.yes_participant == "nfl:NYG"
+    assert any("unknown_label_ignored" in item for item in normalized.evidence)
 
 
-def test_kalshi_date_fallbacks_record_the_source():
+def test_kalshi_title_date_is_authoritative_and_recorded():
     from_title = kalshi(
         "NYG",
         "New York Giants",
@@ -221,24 +228,50 @@ def test_kalshi_date_fallbacks_record_the_source():
     title_result = normalize_market(from_title)
     assert title_result is not None
     assert title_result.date_source == "kalshi_title_or_rules"
+    assert title_result.event_date_ny.isoformat() == "2030-01-06"
 
-    from_hint = kalshi(
+
+def test_kalshi_start_time_and_expiration_hint_do_not_replace_authoritative_date():
+    no_date = kalshi(
         "NYG",
         "New York Giants",
-        start=None,
+        rules="",
         expiration_hint="2030-01-07T03:00:00Z",
     )
-    hint_result = normalize_market(from_hint)
-    assert hint_result is not None
-    assert hint_result.date_source == "kalshi_expected_expiration_minus_3h"
+    diagnostics = []
+    assert normalize_market(no_date, diagnostics=diagnostics) is None
+    assert diagnostics
+    assert any("missing_authoritative_event_date" in item.reason for item in diagnostics)
 
 
-def test_ambiguous_team_label_is_rejected_with_diagnostic():
-    market = kalshi("WILD", "Wildcats", league="ncaaf")
+def test_ambiguous_team_label_is_rejected_without_structured_identity():
+    market = kalshi(
+        "WILD",
+        "Wildcats",
+        league="ncaaf",
+        event_code="30JAN06WILDUNKNOWN",
+        rules="The game is scheduled for January 6, 2030.",
+    )
     diagnostics = []
     assert generate_candidates([market, poly()], diagnostics=diagnostics) == []
     assert diagnostics
     assert any(item.market_key == market.market_key for item in diagnostics)
+
+
+def test_ambiguous_label_is_resolved_by_structured_ticker_candidates():
+    market = kalshi(
+        "ARIZ",
+        "Wildcats",
+        league="ncaaf",
+        event_code="30JAN06ARIZKSU",
+        opponent_code="KSU",
+        opponent_label="Kansas State",
+    )
+    normalized = normalize_market(market)
+    assert normalized is not None
+    assert normalized.yes_participant == "ncaaf:ARIZ"
+    assert normalized.participants == {"ncaaf:ARIZ", "ncaaf:KSU"}
+    assert any("ambiguous_label_ignored" in item for item in normalized.evidence)
 
 
 def test_same_day_doubleheader_requires_manual_date_check():

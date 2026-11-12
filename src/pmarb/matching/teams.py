@@ -129,6 +129,14 @@ class TeamTable:
         hit = self._pick(code_or_label, self._kalshi.get(_code_key(code_or_label), set()))
         return hit if hit is not None else self.resolve_label(code_or_label)
 
+    def resolve_kalshi_code(self, code: str) -> str | None:
+        """Resolve only the Kalshi code namespace, without a label fallback."""
+        return self._pick(code, self._kalshi.get(_code_key(code), set()))
+
+    def resolve_polymarket_code(self, code: str) -> str | None:
+        """Resolve only the Polymarket code namespace, without a label fallback."""
+        return self._pick(code, self._poly.get(_code_key(code), set()))
+
     def resolve_polymarket(self, code_or_label: str) -> str | None:
         """Polymarket US slug code first (e.g. ``nyg``), then any label."""
         hit = self._pick(code_or_label, self._poly.get(_code_key(code_or_label), set()))

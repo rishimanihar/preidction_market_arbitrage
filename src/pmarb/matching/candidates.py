@@ -33,6 +33,8 @@ class Candidate:
     title_similarity: float
     needs_manual_date_check: bool
     start_time_mismatch_minutes: float | None
+    policy_version: str = "v2"
+    flags: tuple[str, ...] = ()
 
 
 def _join_key(market: NormalizedMarket) -> tuple[str, tuple[str, ...], date]:
@@ -215,6 +217,7 @@ def generate_candidates(
                         group=group,
                         match_keys=key,
                         evidence=(
+                            "policy_version:v2",
                             f"league:{p_item.league}",
                             f"participants:{','.join(sorted(p_item.participants))}",
                             (
@@ -222,10 +225,13 @@ def generate_candidates(
                                 f"(Poly source:{p_item.date_source}; Kalshi source:{k_item.date_source})"
                             ),
                             f"yes_participant:{p_item.yes_participant}",
-                        ),
+                        )
+                        + p_item.evidence
+                        + k_item.evidence,
                         title_similarity=_similarity(p_source, k_source),
                         needs_manual_date_check=needs_manual,
                         start_time_mismatch_minutes=mismatch,
+                        flags=tuple(sorted(set(p_item.flags + k_item.flags))),
                     )
                 )
                 matched.update((p_source.market_key, k_source.market_key))

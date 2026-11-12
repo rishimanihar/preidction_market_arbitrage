@@ -66,7 +66,7 @@ def test_synthetic_coverage_blocker_classification():
     other_date = poly(market_id="aec-nfl-nyg-nyj-2030-01-07", start="2030-01-07T18:00:00Z")
     assert _pair_blocker(k, other_date) == "date_mismatch"
 
-    ambiguous = kalshi("WILD", "Wildcats", league="ncaaf")
+    ambiguous = kalshi("WILD", "Wildcats", league="ncaaf", event_code="LEGACY")
     assert _pair_blocker(ambiguous, p).startswith("kalshi:ambiguous_label")
 
 
