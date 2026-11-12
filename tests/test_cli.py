@@ -51,14 +51,11 @@ def test_version() -> None:
     assert completed.stdout.strip() == f"pmarb {version('pmarb')}"
 
 
-@pytest.mark.parametrize("command", ["scan", "replay"])
-def test_placeholders_exit_two(command: str, capsys: pytest.CaptureFixture[str]) -> None:
+def test_replay_is_not_implemented(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as raised:
-        cli.main([command])
+        cli.main(["replay"])
     assert raised.value.code == 2
-    out = capsys.readouterr().out
-    expected = "collector arrives in PR-6" if command == "scan" else "not implemented yet (phase 2)"
-    assert out.strip() == expected
+    assert capsys.readouterr().out.strip() == "not implemented yet (phase 2)"
 
 
 def _make_database(data_dir: Path, version: int = 1) -> None:

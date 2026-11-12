@@ -80,6 +80,11 @@ class Settings(BaseSettings):
     min_touch_qty: int = Field(default=10, ge=0)
     display_tz: str = "America/Chicago"
 
+    # D27: auto approves policy-v2 candidates and those groups stay indicative.
+    review_mode: Literal["auto", "manual"] = "auto"
+    # Catalog refresh. Adapters already spend this on the discovery rate bucket.
+    discovery_interval_s: float = Field(default=900.0, gt=0)
+
     @field_validator(
         "kalshi_member_precision",
         "kalshi_api_key_id",
@@ -91,6 +96,13 @@ class Settings(BaseSettings):
     @classmethod
     def _blank_is_unset(cls, v: object) -> object:
         return None if v == "" else v
+
+    @field_validator("review_mode", mode="before")
+    @classmethod
+    def _review_mode(cls, v: object) -> object:
+        if v is None or v == "":
+            return "auto"
+        return v
 
     @field_validator("polyus_theta", mode="before")
     @classmethod

@@ -1,6 +1,7 @@
 """Command line tools for local review and diagnostics."""
 
 import argparse
+import asyncio
 import importlib
 import os
 import shutil
@@ -168,6 +169,38 @@ def _run_review(port: int) -> int:
         return 1
 
 
+def _scan(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Run the collector until a signal, or for one pass when ``--once`` is set."""
+    try:
+        settings = load_settings()
+    except (ValidationError, OSError):
+        print(
+            "FAIL config: settings are invalid; check the PMARB_* configuration",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from None
+    updates: dict[str, object] = {}
+    if args.max_groups is not None:
+        if args.max_groups < 1:
+            parser.error("--max-groups must be at least 1")
+        updates["max_polled_groups"] = args.max_groups
+    if args.review_mode is not None:
+        updates["review_mode"] = args.review_mode
+    if updates:
+        settings = settings.model_copy(update=updates)
+    # Imported here so a test can replace the adapter classes on the factory.
+    from pmarb.collector.factory import build_collector
+
+    collector = build_collector(settings)
+    try:
+        if args.once:
+            asyncio.run(collector.run_once())
+        else:
+            asyncio.run(collector.run())
+    except KeyboardInterrupt:
+        return
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="pmarb")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -175,13 +208,23 @@ def main(argv: list[str] | None = None) -> None:
     commands.add_parser("doctor", help="check local configuration and runtime readiness")
     review = commands.add_parser("review", help="launch the local review app")
     review.add_argument("--port", type=int, default=None)
-    commands.add_parser("scan", help="scan markets (collector arrives in PR-6)")
+    scan = commands.add_parser(
+        "scan",
+        help="discover markets, review groups, poll books, and evaluate",
+    )
+    scan.add_argument(
+        "--once",
+        action="store_true",
+        help="run one discovery pass and one poll, then exit",
+    )
+    scan.add_argument("--max-groups", type=int, default=None)
+    scan.add_argument("--review-mode", choices=("auto", "manual"), default=None)
     commands.add_parser("replay", help="replay recorded data")
     args = parser.parse_args(argv)
 
     if args.command == "scan":
-        print("collector arrives in PR-6")
-        raise SystemExit(2)
+        _scan(args, scan)
+        return
     if args.command == "replay":
         print("not implemented yet (phase 2)")
         raise SystemExit(2)

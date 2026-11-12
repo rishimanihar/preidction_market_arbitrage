@@ -9,6 +9,8 @@ from datetime import UTC, datetime
 from typing import Any, Self
 from urllib.parse import quote
 
+from pmarb.config import Settings
+from pmarb.fees.polymarket_us import PolymarketUSFeeModel
 from pmarb.http import ObservationHttpClient
 from pmarb.models import Book, Market, Venue
 from pmarb.protocols import BookEvent, FeeModel
@@ -38,6 +40,7 @@ class PolymarketUSAdapter:
         clock_utc: Callable[[], datetime] = lambda: datetime.now(UTC),
         monotonic: Callable[[], float] = time.monotonic,
         connection_generation: int = 0,
+        settings: Settings | None = None,
     ) -> None:
         self._owns_http = http is None
         self.http = http or ObservationHttpClient()
@@ -45,6 +48,7 @@ class PolymarketUSAdapter:
         self._clock_utc = clock_utc
         self._monotonic = monotonic
         self.connection_generation = connection_generation
+        self._settings = settings
 
     async def _get_json(
         self, path: str, *, purpose: str, params: dict[str, Any] | None = None
@@ -151,8 +155,15 @@ class PolymarketUSAdapter:
             await self.http.aclose()
 
     def fee_model(self, market: Market) -> FeeModel:
-        """PR-1 owns a Polymarket US fee model; do not substitute assumptions here."""
-        raise NotImplementedError("Polymarket US fee model is owned by PR-1")
+        """Account Θ from settings. Unset Θ leaves the quote unknown.
+
+        ``market`` is unused: Polymarket US fees follow the account tier, not
+        the market's ``feeCoefficient``. Unknown Θ is scenario-only
+        (``fee_unknown_polymarket_us``).
+        """
+        del market
+        theta = None if self._settings is None else self._settings.polyus_theta
+        return PolymarketUSFeeModel(theta=theta)
 
 
 def _utc(value: datetime) -> datetime:

@@ -1,7 +1,8 @@
 """Poll approved groups and keep a fresh book store.
 
-PR-6b (the evaluator) is not imported. It is the ``on_books_updated`` and
-``on_gap`` hooks, and it reads :class:`~pmarb.collector.books.BookStore`.
+The evaluator, discovery loop, and episode tracker are not imported here.
+PR-6b attaches them through ``on_books_updated``, ``on_gap``, and an optional
+``discovery`` loop. ``run_once`` is one catalog pass and one poll.
 
 Age uses ``BookMeta.received_mono`` and ``received_wall``: this collector's
 clock, stamped when the book is accepted. Skew across venues must use
@@ -32,7 +33,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import quote
 
 from pmarb.collector.books import GENERATION, BookMeta, BookState, BookStore, market_key
@@ -74,7 +75,18 @@ _PROCESS_REASONS = frozenset({CLOCK_JUMP, RECORDING_BACKPRESSURE, GENERATION, AD
 
 BooksHook = Callable[[set[str]], Awaitable[None] | None]
 GapHook = Callable[[str], Awaitable[None] | None]
+StartupHook = Callable[[], Awaitable[None] | None]
 _SIGNALS = (signal.SIGINT, signal.SIGTERM)
+
+
+class DiscoveryLoop(Protocol):
+    """Catalog refresh. The runtime does not import the discovery module."""
+
+    async def run(self) -> None:
+        """Refresh until stopped."""
+
+    async def run_once(self) -> None:
+        """One catalog pass."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +127,9 @@ class Collector:
         groups: Sequence[EquivalenceGroup] = (),
         markets: Sequence[Market] = (),
         install_signals: bool = True,
+        discovery: DiscoveryLoop | None = None,
+        on_startup: StartupHook | None = None,
+        on_stopped: StartupHook | None = None,
     ) -> None:
         if queue_limit < 0:
             raise ValueError("queue_limit must be >= 0")
@@ -141,6 +156,9 @@ class Collector:
         self._queue_limit = queue_limit
         self._backoff = backoff if backoff is not None else Backoff()
         self._install_signals_flag = install_signals
+        self._discovery = discovery
+        self._on_startup = on_startup
+        self._on_stopped = on_stopped
         self._groups: tuple[EquivalenceGroup, ...] = ()
         self._markets: tuple[Market, ...] = ()
         self.set_universe(groups, markets)
@@ -173,6 +191,7 @@ class Collector:
         self._poll_task: asyncio.Task[None] | None = None
         self._fresh_task: asyncio.Task[None] | None = None
         self._health_task: asyncio.Task[None] | None = None
+        self._discovery_task: asyncio.Task[None] | None = None
         self._raw_handle: asyncio.Task[None] | None = None
         self._db_handle: asyncio.Task[None] | None = None
 
@@ -200,6 +219,15 @@ class Collector:
     @property
     def backpressure(self) -> bool:
         return self._backpressure
+
+    @property
+    def stopping(self) -> bool:
+        """True after :meth:`stop` has begun."""
+        return self._stopping
+
+    def record_event(self, venue: str | None, kind: str, detail: Mapping[str, Any]) -> None:
+        """Append a collector event and queue it for the database."""
+        self._emit(venue, kind, detail)
 
     def _bind(self) -> None:
         if self._bound:
@@ -233,6 +261,25 @@ class Collector:
         finally:
             self._remove_signals()
 
+    async def run_once(self) -> None:
+        """One discovery pass and one poll, then the same shutdown as :meth:`stop`."""
+        self._bind()
+        self._install_signals()
+        try:
+            await self._run_startup()
+            self._start_writers()
+            if self._db_task is not None:
+                await self._wait_db()
+            if not self._stopping and self._discovery is not None:
+                await self._discovery.run_once()
+            if not self._stopping:
+                await self._poll_once()
+        finally:
+            try:
+                await self.stop()
+            finally:
+                self._remove_signals()
+
     async def stop(self) -> None:
         """Stop pollers, report shutdown, then drain the raw log and the database."""
         self._bind()
@@ -251,10 +298,19 @@ class Collector:
                 try:
                     await self._cancel_and_wait(self._writer_tasks())
                 finally:
-                    self._stopped.set()
+                    try:
+                        if self._on_stopped is not None:
+                            await _call(self._on_stopped)
+                    finally:
+                        self._stopped.set()
+
+    async def _run_startup(self) -> None:
+        if self._on_startup is not None:
+            await _call(self._on_startup)
 
     async def _serve(self) -> None:
         assert self._stopped is not None
+        await self._run_startup()
         self._start_writers()
         if self._db_task is not None:
             await self._wait_db()
@@ -299,6 +355,11 @@ class Collector:
         self._health_task = asyncio.create_task(
             supervise("health", self._health_loop, **common), name="collector-health"
         )
+        if self._discovery is not None:
+            self._discovery_task = asyncio.create_task(
+                supervise("discovery", self._discovery.run, **common),
+                name="collector-discovery",
+            )
 
     async def _run_db(self) -> None:
         assert self._db_task is not None
@@ -656,7 +717,12 @@ class Collector:
     def _service_tasks(self) -> list[asyncio.Task[None]]:
         return [
             task
-            for task in (self._poll_task, self._fresh_task, self._health_task)
+            for task in (
+                self._poll_task,
+                self._fresh_task,
+                self._health_task,
+                self._discovery_task,
+            )
             if task is not None
         ]
 

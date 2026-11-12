@@ -20,6 +20,17 @@ def ensure_utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
+def parse_utc(value: str | None) -> datetime | None:
+    """Parse an ISO-8601 instant, including the collector's ``Z`` form."""
+    if value is None or value.strip() == "":
+        return None
+    text = value.strip()
+    if text[-1] in "Zz":
+        text = text[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(text)
+    return ensure_utc(parsed)
+
+
 class Clock(Protocol):
     """Time source for collector loops. Tests inject :class:`FakeClock`."""
 

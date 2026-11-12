@@ -1,0 +1,247 @@
+"""Price polled groups and store an assessment when the result actually moves.
+
+``books_atomic`` is true only when every leg is a stream book and the skew
+between those stamps is within the qualified limit. A poll is never atomic.
+A group whose reviewer starts with ``auto:`` cannot be qualified (D27): a
+qualified assessment is rebuilt as indicative.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from decimal import Decimal
+
+from pmarb.collector.books import BookState, BookStore
+from pmarb.collector.clock import Clock
+from pmarb.collector.episodes import EpisodeTracker
+from pmarb.collector.persist import Op
+from pmarb.collector.registry import Registry
+from pmarb.config import Settings
+from pmarb.economics import Limits, assess_group
+from pmarb.models import (
+    AssessmentClass,
+    Book,
+    EquivalenceGroup,
+    GroupStatus,
+    OpportunityAssessment,
+    Venue,
+)
+from pmarb.protocols import FeeModel, VenueAdapter
+from pmarb.storage.db import insert_assessment
+
+MODEL_VERSION = "m1-1"
+SIZE_VIEWS = (Decimal(1), Decimal(10), Decimal(100))
+PROFIT_BAND = Decimal("0.05")
+HEARTBEAT = timedelta(minutes=1)
+
+
+@dataclass(frozen=True, slots=True)
+class AssessmentSnapshot:
+    """The last assessment row written for one direction and size."""
+
+    result_class: AssessmentClass
+    reasons: frozenset[str]
+    net_profit: Decimal | None
+    written_utc: datetime
+
+
+def downgrade_auto_qualified(assessment: OpportunityAssessment) -> OpportunityAssessment:
+    """Rebuild a qualified assessment as indicative.
+
+    The copy keeps books, prices, and ``books_atomic``. Only the class changes,
+    which is what D27 allows an ``auto:`` reviewer to store.
+    """
+    if assessment.result_class is not AssessmentClass.QUALIFIED:
+        return assessment
+    data = assessment.model_dump()
+    data["result_class"] = AssessmentClass.INDICATIVE
+    return OpportunityAssessment.model_validate(data)
+
+
+def books_are_atomic(states: Sequence[BookState], skew_limit_s: float) -> bool:
+    """True when every leg is a stream snapshot and their skew is within the limit."""
+    if len(states) < 2:
+        return False
+    if any(state.meta.source != "stream" for state in states):
+        return False
+    monos = [state.book.received_monotonic for state in states]
+    return max(monos) - min(monos) <= skew_limit_s
+
+
+def should_persist_assessment(
+    previous: AssessmentSnapshot | None,
+    assessment: OpportunityAssessment,
+    *,
+    now: datetime,
+    band: Decimal = PROFIT_BAND,
+    heartbeat: timedelta = HEARTBEAT,
+) -> bool:
+    """Write on a new class, a new reason set, a net move outside the band, or the minute heartbeat."""
+    if previous is None:
+        return True
+    if assessment.result_class is not previous.result_class:
+        return True
+    if frozenset(assessment.reasons) != previous.reasons:
+        return True
+    if _net_moved(previous.net_profit, assessment.net_profit, band):
+        return True
+    return now - previous.written_utc >= heartbeat
+
+
+def limits_for(settings: Settings, states: Sequence[BookState], cadence_s: float) -> Limits:
+    """Stream books use the stream age. Polled books use the cadence multiple."""
+    if states and all(state.meta.source == "stream" for state in states):
+        max_age = settings.stream_max_age_s
+    else:
+        max_age = cadence_s * settings.poll_max_age_cadence_multiple
+    return Limits(
+        max_book_age_s=Decimal(str(max_age)),
+        max_skew_indicative_s=Decimal(str(settings.skew_indicative_s)),
+        max_skew_qualified_s=Decimal(str(settings.skew_qualified_s)),
+        min_touch_qty=Decimal(settings.min_touch_qty),
+    )
+
+
+class Evaluator:
+    """``on_books_updated`` hook. Discovery samples are ignored and open no episodes."""
+
+    def __init__(
+        self,
+        *,
+        registry: Registry,
+        store: BookStore,
+        kalshi: VenueAdapter,
+        polyus: VenueAdapter,
+        settings: Settings,
+        episodes: EpisodeTracker,
+        enqueue: Callable[[Op], None],
+        clock: Clock,
+        opens_episodes: Callable[[str], bool] | None = None,
+        cadence_s: Callable[[], float] | None = None,
+    ) -> None:
+        self._registry = registry
+        self._store = store
+        self._kalshi = kalshi
+        self._polyus = polyus
+        self._settings = settings
+        self._episodes = episodes
+        self._enqueue = enqueue
+        self._clock = clock
+        self._opens = opens_episodes if opens_episodes is not None else (lambda _group_id: True)
+        self._cadence = cadence_s if cadence_s is not None else (lambda: 1.0)
+        self._written: dict[tuple[object, ...], AssessmentSnapshot] = {}
+
+    def bind(self, collector: object) -> None:
+        """Read the fast-set and the cadence from a running collector."""
+        opens = getattr(collector, "opens_episodes", None)
+        cadence = getattr(collector, "cadence_s", None)
+        if not callable(opens) or not isinstance(cadence, int | float):
+            raise TypeError("collector must provide opens_episodes and cadence_s")
+        self._opens = opens
+        self._cadence = lambda: collector.cadence_s  # type: ignore[attr-defined]
+
+    async def on_books_updated(self, group_ids: set[str]) -> None:
+        for group_id in sorted(group_ids):
+            self._evaluate(group_id)
+        self._episodes.flush()
+
+    def _evaluate(self, group_id: str) -> None:
+        if not self._opens(group_id):
+            return
+        group = self._registry.groups.get(group_id)
+        if group is None or group.status is not GroupStatus.APPROVED:
+            return
+        loaded = self._books(group)
+        if loaded is None:
+            self._episodes.mark_unassessed(group_id, self._clock.wall(), self._cadence())
+            return
+        states, books = loaded
+        cadence = self._cadence()
+        atomic = books_are_atomic(states, self._settings.skew_qualified_s)
+        limits = limits_for(self._settings, states, cadence)
+        fee_models = self._fee_models(group)
+        auto = bool(group.reviewer) and group.reviewer.startswith("auto:")
+        now_mono = self._clock.monotonic()
+        now_wall = self._clock.wall()
+        for qty in SIZE_VIEWS:
+            priced = assess_group(
+                group,
+                books,
+                fee_models,
+                qty,
+                now_monotonic=now_mono,
+                now_wall=now_wall,
+                books_atomic=atomic,
+                model_version=MODEL_VERSION,
+                limits=limits,
+            )
+            for assessment in priced:
+                if auto:
+                    assessment = downgrade_auto_qualified(assessment)
+                self._persist(assessment)
+                self._episodes.observe(assessment, opens_episode=True)
+
+    def _books(self, group: EquivalenceGroup) -> tuple[list[BookState], dict[str, Book]] | None:
+        states: list[BookState] = []
+        books: dict[str, Book] = {}
+        for member in group.members:
+            key = f"{member.venue.value}:{member.market_id}"
+            state = self._store.get(key)
+            if state is None:
+                return None
+            book = state.book
+            if state.invalid_reason and book.valid:
+                book = book.model_copy(
+                    update={"valid": False, "invalid_reason": state.invalid_reason}
+                )
+            states.append(state)
+            books[key] = book
+        return states, books
+
+    def _fee_models(self, group: EquivalenceGroup) -> dict[str, FeeModel]:
+        models: dict[str, FeeModel] = {}
+        for member in group.members:
+            market = self._registry.market(member.venue, member.market_id)
+            if market is None:
+                continue
+            if member.venue is Venue.KALSHI:
+                adapter = self._kalshi
+            elif member.venue is Venue.POLYMARKET_US:
+                adapter = self._polyus
+            else:
+                continue
+            models[market.market_key] = adapter.fee_model(market)
+        return models
+
+    def _persist(self, assessment: OpportunityAssessment) -> None:
+        key = (
+            assessment.group_id,
+            assessment.yes_leg.venue.value,
+            assessment.yes_leg.market_id,
+            assessment.no_leg.venue.value,
+            assessment.no_leg.market_id,
+            assessment.requested_qty,
+        )
+        previous = self._written.get(key)
+        if not should_persist_assessment(previous, assessment, now=assessment.computed_utc):
+            return
+
+        def apply(conn: sqlite3.Connection, assessment: OpportunityAssessment = assessment) -> None:
+            insert_assessment(conn, assessment)
+
+        self._enqueue(apply)
+        self._written[key] = AssessmentSnapshot(
+            result_class=assessment.result_class,
+            reasons=frozenset(assessment.reasons),
+            net_profit=assessment.net_profit,
+            written_utc=assessment.computed_utc,
+        )
+
+
+def _net_moved(previous: Decimal | None, current: Decimal | None, band: Decimal) -> bool:
+    if previous is None or current is None:
+        return previous is not current
+    return abs(current - previous) > band

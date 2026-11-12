@@ -5,9 +5,12 @@ from __future__ import annotations
 import time
 from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Any, Self
 from urllib.parse import quote
 
+from pmarb.config import Settings
+from pmarb.fees.kalshi import KalshiFeeModel
 from pmarb.http import ObservationHttpClient
 from pmarb.models import Book, Market, Venue
 from pmarb.protocols import BookEvent, FeeModel
@@ -32,6 +35,7 @@ class KalshiAdapter:
         clock_utc: Callable[[], datetime] = lambda: datetime.now(UTC),
         monotonic: Callable[[], float] = time.monotonic,
         connection_generation: int = 0,
+        settings: Settings | None = None,
     ) -> None:
         self._owns_http = http is None
         self.http = http or ObservationHttpClient()
@@ -39,6 +43,7 @@ class KalshiAdapter:
         self._clock_utc = clock_utc
         self._monotonic = monotonic
         self.connection_generation = connection_generation
+        self._settings = settings
         self._series_cache: dict[str, dict[str, Any]] = {}
         self._event_cache: dict[str, dict[str, Any]] = {}
 
@@ -206,8 +211,35 @@ class KalshiAdapter:
             await self.http.aclose()
 
     def fee_model(self, market: Market) -> FeeModel:
-        """PR-1 owns the Kalshi fee model; do not substitute assumptions here."""
-        raise NotImplementedError("Kalshi fee model is owned by PR-1")
+        """Series multiplier from ``fee_meta``; member precision from settings.
+
+        Either one missing leaves the quote unknown. Assessments then stay
+        scenario-only (``fee_unknown_kalshi``) instead of assuming a schedule.
+        """
+        return KalshiFeeModel(
+            multiplier=_fee_multiplier(market),
+            precision=_member_precision(self._settings),
+        )
+
+
+def _member_precision(settings: Settings | None) -> Decimal | None:
+    if settings is None or settings.kalshi_member_precision is None:
+        return None
+    return Decimal(settings.kalshi_member_precision)
+
+
+def _fee_multiplier(market: Market) -> Decimal | None:
+    """Series ``fee_multiplier`` when it is a finite non-negative decimal."""
+    raw = market.fee_meta.get("fee_multiplier") if market.fee_meta else None
+    if raw is None or raw.strip() == "":
+        return None
+    try:
+        value = Decimal(raw)
+    except (InvalidOperation, ValueError):
+        return None
+    if not value.is_finite() or value < 0:
+        return None
+    return value
 
 
 def _utc(value: datetime) -> datetime:
