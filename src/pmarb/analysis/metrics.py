@@ -14,7 +14,25 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from pmarb.fees import kalshi_taker_fee, polyus_taker_fee
+from pmarb.fees import KalshiFeeModel, PolymarketUSFeeModel
+from pmarb.models import Side
+
+# Scenario fee models for repricing stored walks (labelled as scenarios in reports).
+# Kalshi: 0.07 x multiplier 1, direct-member 0.0001 grid, via the documented
+# fee_rounding accumulator plus the one-step conservative margin used live.
+_SCENARIO_KALSHI = KalshiFeeModel(multiplier=Decimal(1), precision=Decimal("0.0001"))
+_SCENARIO_POLY = {
+    theta: PolymarketUSFeeModel(theta=Decimal(theta)) for theta in ("0.0695", "0.095")
+}
+
+
+def _scenario_fee(model: object, levels: list) -> Decimal:
+    quote = model.taker_fee(levels, Side.YES)  # fee shape is side-independent
+    if quote.amount is None:  # pragma: no cover - scenario models are fully specified
+        raise ValueError("scenario fee model returned unknown amount")
+    return quote.amount
+
+
 from pmarb.models import Level
 
 ZERO = Decimal(0)
@@ -233,11 +251,11 @@ def _scenario_fees(row: dict[str, Any]) -> tuple[dict[str, Decimal] | None, str 
             return None, "cannot identify both venue legs"
         k_leg = "yes" if market_venues[0] == "kalshi" else "no"
         p_leg = "no" if k_leg == "yes" else "yes"
-        kalshi_fee = kalshi_taker_fee(levels[k_leg])
+        kalshi_fee = _scenario_fee(_SCENARIO_KALSHI, levels[k_leg])
         return {
             "kalshi": kalshi_fee,
-            "poly_0.0695": polyus_taker_fee(levels[p_leg], Decimal("0.0695")),
-            "poly_0.095": polyus_taker_fee(levels[p_leg], Decimal("0.095")),
+            "poly_0.0695": _scenario_fee(_SCENARIO_POLY["0.0695"], levels[p_leg]),
+            "poly_0.095": _scenario_fee(_SCENARIO_POLY["0.095"], levels[p_leg]),
             "acquisition_cost": sum(
                 (level.price * level.size for leg in ("yes", "no") for level in levels[leg]), ZERO
             ),

@@ -538,16 +538,18 @@ def test_scenario_fees_walk_each_level_and_preserve_decimal_math(tmp_path):
     finally:
         conn.close()
     scenario = metrics["fees"]["scenario"]
+    # Kalshi scenario fees include the live model's one-step ($0.0001) conservative
+    # margin (PR-1), so each net is $0.0001 below the raw fee_rounding result.
     assert scenario["available"] is True
     assert scenario["repricable_assessments"] == 3
-    assert scenario["net_profit"]["0.0695"]["max"] == Decimal("11.6150")
-    assert scenario["net_profit"]["0.095"]["max"] == Decimal("11.0050")
+    assert scenario["net_profit"]["0.0695"]["max"] == Decimal("11.6149")
+    assert scenario["net_profit"]["0.095"]["max"] == Decimal("11.0049")
     assert metrics["opportunities"]["overall"]["qty_profitability"]["1"]["scenario_net_by_theta"][
         "0.0695"
-    ]["net_profit"]["max"] == Decimal("0.1128")
+    ]["net_profit"]["max"] == Decimal("0.1127")
     assert metrics["opportunities"]["overall"]["qty_profitability"]["10"]["scenario_net_by_theta"][
         "0.0695"
-    ]["net_profit"]["max"] == Decimal("1.1585")
+    ]["net_profit"]["max"] == Decimal("1.1584")
     assert metrics["opportunities"]["overall"]["qty_profitability"]["100"]["scenario_net_by_theta"][
         "0.095"
-    ]["net_profit"]["max"] == Decimal("11.0050")
+    ]["net_profit"]["max"] == Decimal("11.0049")
