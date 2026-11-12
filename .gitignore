@@ -25,6 +25,7 @@ credentials*
 
 # --- Runtime / recorded market data (venue terms may restrict sharing) ---
 data/
+!src/pmarb/matching/data/
 recordings/
 *.sqlite
 *.sqlite3
