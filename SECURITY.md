@@ -4,12 +4,14 @@ This repository is **public**. Anything committed, even briefly, should be treat
 
 ## Never commit
 - API key ids, private keys (`.pem`, Ed25519/RSA), signatures, session tokens, `.env` files.
-- Recorded market data, raw API dumps, SQLite databases, logs. Kalshi's developer terms on storing/sharing API data are not yet confirmed; keep all runtime data outside the repo (`PMARB_DATA_DIR`, default `~/pmarb-data`).
+- Recorded market data, raw API dumps, SQLite databases, logs. These live in the gitignored `data/` folder inside your checkout (`PMARB_DATA_DIR`, default `./data`) and never leave the team's machines. Venue terms restrict publishing API data; keep it private.
+- Live API values pasted into docs, issues, or PRs — use synthetic examples instead.
 - Account identifiers, balances, fills, or screenshots of either.
 
 ## Where credentials live
 - Private keys: files under `~/.config/pmarb/` with mode `600`. Config refers to them by path (see `.env.example`).
 - The application must refuse to start if a key file is inside the repository, is group/world readable, or if a secret value appears in a config file tracked by git.
+- Each person uses their own venue account and their own API key. Never share keys between people.
 - Use the narrowest scope each venue offers (Kalshi `read`; Polymarket US read-only if available). Observation and replay never need trading permission. Trading keys are out of scope until the live-execution milestone is explicitly approved.
 - Never paste keys into chats, issues, PRs, commit messages, or AI agent prompts.
 

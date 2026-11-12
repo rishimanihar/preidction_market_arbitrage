@@ -17,5 +17,7 @@ python3.12 -m venv .venv
 - `Decimal` for all prices, sizes, fees, and money. No floats in calculations.
 - Every venue-specific behavior (price convention, fee rounding, book semantics) gets a fixture-based test citing its doc source.
 - Unknown inputs (fees, settlement timing, rules) must surface as "unknown/unqualified", never default to zero.
-- No network calls in unit tests; use recorded fixtures (synthetic or redacted, never committed raw dumps).
+- No network calls in unit tests. Two test tiers:
+  - Synthetic fixtures in `tests/fixtures/` (committed) — run everywhere, including CI.
+  - Real recorded data in `data/` (gitignored, local only) — tests marked `@pytest.mark.localdata`, skipped automatically when the data is absent. Run locally with `pytest -m localdata`. Never copy real data into `tests/fixtures/`.
 - See `SECURITY.md` for credential handling.
