@@ -58,6 +58,15 @@ ALLOWED_HOSTS = frozenset(
         "api.gemini.com",
     }
 )
+# Public market pages, plus the API hosts the observation client already allows.
+MARKET_LINK_HOSTS = ALLOWED_HOSTS | frozenset(
+    {
+        "kalshi.com",
+        "www.kalshi.com",
+        "polymarket.us",
+        "www.polymarket.us",
+    }
+)
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 # Transient transport failures. LocalProtocolError, ProxyError and
 # UnsupportedProtocol are local configuration faults: another attempt cannot fix
@@ -448,12 +457,57 @@ class HttpResult:
         return json.loads(self.content)
 
 
+def allowed_market_url(url: object) -> str | None:
+    """Return ``url`` when it is https on a venue host; otherwise ``None``.
+
+    Userinfo and ports other than 443 are rejected. ``httpx`` must parse the
+    same host, so a link button cannot follow a parser disagreement.
+    """
+    if not isinstance(url, str) or url == "":
+        return None
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return None
+    host = (parts.hostname or "").lower()
+    if (
+        parts.scheme != "https"
+        or host not in MARKET_LINK_HOSTS
+        or parts.username is not None
+        or parts.password is not None
+        or parts.port not in (None, 443)
+    ):
+        return None
+    try:
+        parsed = httpx.URL(url)
+    except httpx.InvalidURL:
+        return None
+    if (parsed.host or "").lower() != host:
+        return None
+    return url
+
+
 def _check_url(url: str) -> None:
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+    except ValueError as exc:
+        raise HostNotAllowedError("invalid URL") from exc
     if parts.scheme != "https":
         raise HostNotAllowedError(f"only https URLs are allowed: {parts.scheme or '(none)'}")
-    if (parts.hostname or "").lower() not in ALLOWED_HOSTS:
+    if parts.username is not None or parts.password is not None:
+        raise HostNotAllowedError("URL userinfo is not allowed")
+    if parts.port not in (None, 443):
+        raise HostNotAllowedError(f"only port 443 is allowed: {parts.port}")
+    host = (parts.hostname or "").lower()
+    if host not in ALLOWED_HOSTS:
         raise HostNotAllowedError(f"host not on allowlist: {parts.hostname}")
+    try:
+        parsed = httpx.URL(url)
+    except httpx.InvalidURL as exc:
+        raise HostNotAllowedError("URL host is not allowed") from exc
+    httpx_host = (parsed.host or "").lower()
+    if httpx_host not in ALLOWED_HOSTS or httpx_host != host:
+        raise HostNotAllowedError(f"host not on allowlist: {parsed.host or parts.hostname}")
 
 
 def _retry_after(response: httpx.Response, now: datetime | None = None) -> float | None:

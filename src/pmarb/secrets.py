@@ -1,17 +1,28 @@
 """Key-file policy: refuse unsafe key files, never log contents.
 
-On POSIX a key file must have no group or other permission bits. On Windows
-mode bits mean nothing, so the file must instead sit under
-``%USERPROFILE%\\.config\\pmarb\\`` and its ACL (read with ``icacls``) must not
-let Everyone, Users or Authenticated Users read it. See :mod:`pmarb.winacl`.
+On POSIX a key file must have no group or other permission bits, must be owned
+by the current user, and is opened with ``O_NOFOLLOW`` and read from that
+descriptor. On Windows mode bits mean nothing, so the file must instead sit
+under ``%USERPROFILE%\\.config\\pmarb\\`` and its ACL (read with ``icacls``)
+must not let Everyone, Users or Authenticated Users read it. See
+:mod:`pmarb.winacl`.
 """
 
+import errno
+import hashlib
 import logging
 import os
 import stat
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
+from typing import NamedTuple
+
+# src/pmarb/secrets.py -> parents[2] is the repository root. Never use the cwd.
+_PACKAGE_ROOT = Path(__file__).resolve().parents[2]
+# Built at runtime so the source does not contain a private-key header.
+_PRIVATE_KEY_MARK = ("-----BEGIN" + " PRIVATE KEY-----").encode()
+_MAX_KEY_BYTES = 1024 * 1024
 
 from pmarb.osutil import is_windows
 from pmarb.winacl import RESTRICT_HINT, CommandRunner, IcaclsParseError, check_acl
@@ -21,6 +32,11 @@ _log = logging.getLogger(__name__)
 
 class SecretPolicyError(RuntimeError):
     """A key file or tracked file violates the secrets policy."""
+
+
+class _KeyFingerprint(NamedTuple):
+    body: bytes
+    digest: bytes
 
 
 def windows_config_dir() -> Path:
@@ -41,13 +57,50 @@ def check_key_file(
 ) -> Path:
     """Validate a key file; return its resolved path. Raise ``SecretPolicyError``.
 
-    ``label`` names the file in messages (the doctor also checks the settings
-    file with this function on Windows). ``runner``, ``allowed_dir`` and
-    ``warnings`` apply on Windows only. ``runner`` executes ``icacls`` and
-    ``allowed_dir`` defaults to :func:`windows_config_dir`. When ``icacls``
-    cannot run, the ACL is unverified. That is logged as a warning and also
-    appended to ``warnings`` when given. It never passes silently.
+    On POSIX the file is opened with ``O_NOFOLLOW`` and checked with ``fstat``
+    on that descriptor. ``label`` names the file in messages. ``runner``,
+    ``allowed_dir`` and ``warnings`` apply on Windows only. ``runner`` executes
+    ``icacls`` and ``allowed_dir`` defaults to :func:`windows_config_dir`. When
+    ``icacls`` cannot run, the ACL is unverified. That is logged as a warning
+    and also appended to ``warnings`` when given. It never passes silently.
     """
+    raw, resolved = _locate(path, repo_root, label)
+    if is_windows():
+        st = resolved.stat()
+        if not stat.S_ISREG(st.st_mode):
+            raise SecretPolicyError(f"{label} is not a regular file: {resolved}")
+        _check_windows_acl(resolved, label, runner, allowed_dir, warnings)
+        return resolved
+    fd = _open_checked(raw, resolved, label)
+    os.close(fd)
+    return resolved
+
+
+def load_private_key(
+    path: Path | str,
+    repo_root: Path | str | None = None,
+    *,
+    runner: CommandRunner | None = None,
+) -> bytes:
+    """Read key bytes after the policy checks.
+
+    ``repo_root`` defaults to this package's repository. The process working
+    directory is not used. On POSIX the file is opened with ``O_NOFOLLOW``,
+    checked with ``fstat`` on that descriptor, and read from the same
+    descriptor.
+    """
+    root = _PACKAGE_ROOT if repo_root is None else repo_root
+    if is_windows():
+        return check_key_file(path, root, runner=runner).read_bytes()
+    raw, resolved = _locate(path, root, "key file")
+    fd = _open_checked(raw, resolved, "key file")
+    try:
+        return _read_fd(fd)
+    finally:
+        os.close(fd)
+
+
+def _locate(path: Path | str, repo_root: Path | str, label: str) -> tuple[Path, Path]:
     raw = Path(path).expanduser()
     if not raw.exists():
         raise SecretPolicyError(f"{label} not found: {raw}")
@@ -55,18 +108,34 @@ def check_key_file(
     root = Path(repo_root).expanduser().resolve()
     if resolved == root or root in resolved.parents:
         raise SecretPolicyError(f"{label} must live outside the repository: {resolved}")
-    st = resolved.stat()
-    if not stat.S_ISREG(st.st_mode):
-        raise SecretPolicyError(f"{label} is not a regular file: {resolved}")
-    if is_windows():
-        _check_windows_acl(resolved, label, runner, allowed_dir, warnings)
-        return resolved
-    if st.st_mode & 0o077:
-        mode = stat.S_IMODE(st.st_mode)
+    return raw, resolved
+
+
+def _open_checked(raw: Path, display: Path, label: str) -> int:
+    try:
+        fd = os.open(raw, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as exc:
+        if exc.errno == errno.ENOENT:
+            raise SecretPolicyError(f"{label} not found: {display}") from exc
+        raise SecretPolicyError(f"{label} is not a regular file: {display}") from exc
+    try:
+        _require_key_stat(os.fstat(fd), display, label)
+    except Exception:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _require_key_stat(info: os.stat_result, display: Path, label: str) -> None:
+    if not stat.S_ISREG(info.st_mode):
+        raise SecretPolicyError(f"{label} is not a regular file: {display}")
+    if info.st_mode & 0o077:
+        mode = stat.S_IMODE(info.st_mode)
         raise SecretPolicyError(
-            f"{label} permissions {mode:04o} are too open (run: chmod 600 {resolved})"
+            f"{label} permissions {mode:04o} are too open (run: chmod 600 {display})"
         )
-    return resolved
+    if hasattr(os, "geteuid") and info.st_uid != os.geteuid():
+        raise SecretPolicyError(f"{label} is not owned by the current user: {display}")
 
 
 def _check_windows_acl(
@@ -103,41 +172,62 @@ def _check_windows_acl(
             warnings.append(message)
 
 
-def load_private_key(
-    path: Path | str,
-    repo_root: Path | str | None = None,
-    *,
-    runner: CommandRunner | None = None,
-) -> bytes:
-    """Read key bytes after the policy checks. ``repo_root`` defaults to the cwd's repo."""
-    root = Path(repo_root) if repo_root is not None else _git_root(Path.cwd()) or Path.cwd()
-    return check_key_file(path, root, runner=runner).read_bytes()
+def _read_fd(fd: int) -> bytes:
+    chunks: list[bytes] = []
+    while True:
+        block = os.read(fd, 1024 * 1024)
+        if not block:
+            break
+        chunks.append(block)
+    return b"".join(chunks)
 
 
-def _git_root(start: Path) -> Path | None:
+def _configured_key_paths() -> list[Path]:
     try:
-        out = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=start,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError):
+        from pmarb.config import load_settings
+
+        settings = load_settings()
+    except Exception:  # noqa: BLE001 - a missing config must not hide tracked secrets
+        return []
+    paths = (settings.kalshi_private_key_path, settings.polyus_private_key_path)
+    return [path for path in paths if path is not None]
+
+
+def _fingerprint(path: Path) -> _KeyFingerprint | None:
+    """SHA-256 of a configured key body. Unreadable paths are skipped."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError:
         return None
-    return Path(out.stdout.strip())
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size <= 0 or info.st_size > _MAX_KEY_BYTES:
+            return None
+        body = _read_fd(fd)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+    if not body:
+        return None
+    return _KeyFingerprint(body, hashlib.sha256(body).hexdigest().encode())
 
 
-def assert_no_tracked_secrets(repo_root: Path | str, values: Iterable[str]) -> None:
-    """Raise if any secret value appears in a git-tracked file. Skips non-git dirs.
+def assert_no_tracked_secrets(
+    repo_root: Path | str,
+    values: Iterable[str],
+    key_paths: Iterable[Path | str] | None = None,
+) -> None:
+    """Raise if a tracked file contains a secret, a private-key block, or a key fingerprint.
 
-    The error names the file only, never the value.
+    The error names the file only, never the secret or the key bytes.
+    ``key_paths`` defaults to the private-key paths configured on ``Settings``.
+    A non-git directory is skipped.
     """
     root = Path(repo_root)
-    needles = [v.encode() for v in values if v]
-    if not needles:
-        return
+    needles = [value.encode() for value in values if value]
+    selected = _configured_key_paths() if key_paths is None else [Path(path) for path in key_paths]
+    fingerprints = [item for item in (_fingerprint(path) for path in selected) if item is not None]
     try:
         out = subprocess.run(
             ["git", "ls-files", "-z"],
@@ -159,5 +249,14 @@ def assert_no_tracked_secrets(repo_root: Path | str, values: Iterable[str]) -> N
             data = file.read_bytes()
         except OSError:
             continue
-        if any(n in data for n in needles):
+        if _PRIVATE_KEY_MARK in data:
+            raise SecretPolicyError(f"a private key block appears in tracked file: {name}")
+        file_digest = hashlib.sha256(data).hexdigest().encode()
+        for item in fingerprints:
+            embedded = len(item.body) >= 16 and item.body in data
+            if item.digest in data or file_digest == item.digest or embedded:
+                raise SecretPolicyError(
+                    f"a configured key fingerprint appears in tracked file: {name}"
+                )
+        if any(needle in data for needle in needles):
             raise SecretPolicyError(f"a secret value appears in tracked file: {name}")

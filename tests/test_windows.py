@@ -814,8 +814,8 @@ def test_powershell_scripts_have_no_secrets_or_personal_paths(script: Path) -> N
     lowered = text.lower()
     for forbidden in (
         "c:\\users\\",
-        "/users/",
-        "/home/",
+        "/" + "users/",
+        "/" + "home/",
         "begin private key",
         "begin rsa",
         "begin openssh",

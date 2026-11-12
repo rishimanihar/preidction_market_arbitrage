@@ -13,8 +13,24 @@ jobs:
           fetch-depth: 0
       - name: gitleaks (full history)
         run: |
-          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz | tar -xz gitleaks
+          version="8.30.1"
+          tarball="gitleaks_${version}_linux_x64.tar.gz"
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${version}"
+          curl -sSfL -o "$tarball" "${base}/${tarball}"
+          curl -sSfL -o checksums.txt "${base}/gitleaks_${version}_checksums.txt"
+          # Pinned SHA-256 of gitleaks_8.30.1_linux_x64.tar.gz from that release's checksums file.
+          pinned="551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+          echo "${pinned}  ${tarball}" | sha256sum -c -
+          grep -F "${pinned}  ${tarball}" checksums.txt
+          tar -xzf "$tarball" gitleaks
           ./gitleaks git . --no-banner --redact --config .gitleaks.toml
+      - name: no personal home paths
+        run: |
+          pattern="$(printf '%s%s%s%s' '/Users' '/' '|/' 'home/')"
+          if git grep -nE "$pattern" -- . ':(exclude)tests/fixtures'; then
+            echo "personal home paths found outside tests/fixtures" >&2
+            exit 1
+          fi
   test:
     runs-on: ubuntu-latest
     steps:
@@ -28,6 +44,11 @@ jobs:
           pip install -e '.[dev]'
           ruff check src tests
           pytest -q -m "not localdata"
+      - name: pip-audit (report only)
+        continue-on-error: true
+        run: |
+          python -m pip install pip-audit
+          python -m pip-audit
   test-windows:
     runs-on: windows-latest
     steps:

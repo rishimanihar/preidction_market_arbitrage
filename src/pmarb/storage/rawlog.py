@@ -80,7 +80,7 @@ class Envelope:
     def __post_init__(self) -> None:
         if self.kind not in KINDS:
             raise ValueError(f"unknown envelope kind: {self.kind!r}")
-        if not _VENUE_RE.match(self.venue):
+        if _VENUE_RE.fullmatch(self.venue) is None:
             raise ValueError(f"unsafe venue name: {self.venue!r}")
 
     def to_json(self) -> str:

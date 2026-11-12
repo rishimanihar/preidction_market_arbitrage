@@ -7,6 +7,7 @@ import streamlit as st
 from pmarb.app.formatting import format_chicago_time, format_money
 from pmarb.app.pages.common import query_page
 from pmarb.app.queries import fetch_episodes
+from pmarb.http import allowed_market_url
 
 
 def render() -> None:
@@ -38,8 +39,8 @@ def render() -> None:
     for row in rows:
         with st.expander(f"{row.get('group_id', 'group')} · episode {row.get('id', '')}"):
             for label, key in (("YES market URL", "yes_url"), ("NO market URL", "no_url")):
-                url = row.get(key)
-                if url:
-                    st.link_button(label, url)
+                link = allowed_market_url(row.get(key))
+                if link is not None:
+                    st.link_button(label, link)
                 else:
-                    st.write(f"{label}: unavailable")
+                    st.text(f"{label}: unavailable")

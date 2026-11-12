@@ -13,6 +13,7 @@ from pmarb.app.decisions import build_decision, write_decision
 from pmarb.app.formatting import format_chicago_time
 from pmarb.app.pages.common import database_path, query_page, show_value
 from pmarb.app.queries import fetch_candidates, fetch_group_review
+from pmarb.http import allowed_market_url
 
 
 def _members(review: dict[str, Any]) -> list[dict[str, Any]]:
@@ -54,10 +55,12 @@ def render() -> None:
     for index, market in enumerate(members):
         col = columns[index]
         with col:
-            st.subheader(market.get("title") or market.get("market_key", f"Market {index + 1}"))
+            title = market.get("title") or market.get("market_key") or f"Market {index + 1}"
+            st.text(str(title))
             st.caption(str(market.get("venue", "Venue unavailable")))
-            if market.get("url"):
-                st.link_button("Open market", market["url"])
+            link = allowed_market_url(market.get("url"))
+            if link is not None:
+                st.link_button("Open market", link)
             st.markdown(f"**Current rules hash**  \n`{market.get('rules_hash') or 'unavailable'}`")
             st.markdown("**Rules text**")
             st.text_area(

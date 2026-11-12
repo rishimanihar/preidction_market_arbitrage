@@ -12,6 +12,7 @@ from pmarb.http import (
     ResponseTooLargeError,
     RetriesExhaustedError,
     TokenBucket,
+    allowed_market_url,
 )
 
 KALSHI = "https://external-api.kalshi.com/trade-api/v2/markets"
@@ -233,3 +234,59 @@ def test_allowlist_contents() -> None:
         "assets.kalshi.com",
         "api.gemini.com",
     }
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://user:pass@external-api.kalshi.com/x",
+        "https://:secret@external-api.kalshi.com/x",
+        "https://@external-api.kalshi.com/x",
+    ],
+)
+async def test_userinfo_refused(url: str) -> None:
+    async with make_client(lambda r: httpx.Response(200)) as client:
+        with pytest.raises(HostNotAllowedError):
+            await client.get(url, venue="kalshi", purpose="books")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://external-api.kalshi.com:8443/x",
+        "https://external-api.kalshi.com:444/x",
+        "https://external-api.kalshi.com:80/x",
+    ],
+)
+async def test_non_443_port_refused(url: str) -> None:
+    async with make_client(lambda r: httpx.Response(200)) as client:
+        with pytest.raises(HostNotAllowedError):
+            await client.get(url, venue="kalshi", purpose="books")
+
+
+async def test_explicit_443_is_allowed() -> None:
+    async with make_client(lambda r: httpx.Response(200, json={"ok": True})) as client:
+        result = await client.get(
+            "https://external-api.kalshi.com:443/trade-api/v2/markets",
+            venue="kalshi",
+            purpose="books",
+        )
+    assert result.status_code == 200
+
+
+async def test_httpx_host_must_agree_with_urlsplit() -> None:
+    # urlsplit accepts this host. httpx rejects the URL, so both parsers are required.
+    url = "https://external-api.kalshi.com\t/x"
+    async with make_client(lambda r: httpx.Response(200)) as client:
+        with pytest.raises(HostNotAllowedError):
+            await client.get(url, venue="kalshi", purpose="books")
+
+
+def test_market_links_require_https_venue_hosts() -> None:
+    assert allowed_market_url("https://kalshi.com/markets/ABC") == "https://kalshi.com/markets/ABC"
+    assert allowed_market_url("https://polymarket.us/market/abc") is not None
+    assert allowed_market_url("http://kalshi.com/markets/ABC") is None
+    assert allowed_market_url("https://user@kalshi.com/markets/ABC") is None
+    assert allowed_market_url("https://kalshi.com:8443/markets/ABC") is None
+    assert allowed_market_url("https://evil.example/markets/ABC") is None
+    assert allowed_market_url("https://kalshi.com\t/markets/ABC") is None
