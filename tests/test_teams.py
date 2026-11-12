@@ -5,6 +5,7 @@ the four NFL teams absent from the dumps (CHI, DEN, PHI, TB) carry inferred code
 """
 
 import json
+import os
 import re
 from collections import defaultdict
 from importlib import resources
@@ -121,10 +122,12 @@ NHL_CODES = {
 PRO = {"nfl": NFL_CODES, "nba": NBA_CODES, "nhl": NHL_CODES}
 EXPECTED_COUNT = {"nfl": 32, "nba": 30, "nhl": 32}
 
-SCRATCH = Path(
-    "/private/tmp/claude-501/-Users-avynarra-Documents-preidction-market-arbitrage/"
-    "15953eab-eae9-4308-824e-ae5ba92c4b48/scratchpad/research/matching/raw"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+_DATA_ROOT = Path(os.environ.get("PMARB_DATA_DIR", "data"))
+MATCHING_DATA = (_DATA_ROOT if _DATA_ROOT.is_absolute() else REPO_ROOT / _DATA_ROOT) / (
+    "research/matching"
 )
+RAW_DATA = MATCHING_DATA / "raw"
 SERIES = {
     "nfl": "KXNFLGAME",
     "nba": "KXNBAGAME",
@@ -302,7 +305,7 @@ def _kalshi_events(series: str) -> dict[str, dict[str, str]]:
     """event ticker -> {team code: yes label}, for one game series, both 7-day dumps."""
     events: dict[str, dict[str, str]] = defaultdict(dict)
     for fn in ("kalshi_primary_7d.json", "kalshi_close_time_7d.json"):
-        data = json.loads((SCRATCH / fn).read_text())
+        data = json.loads((RAW_DATA / fn).read_text())
         for markets in data.values():
             if not isinstance(markets, list):
                 continue
@@ -313,7 +316,7 @@ def _kalshi_events(series: str) -> dict[str, dict[str, str]]:
 
 
 @pytest.mark.localdata
-@pytest.mark.skipif(not SCRATCH.is_dir(), reason="local overlap-study dumps not present")
+@pytest.mark.skipif(not RAW_DATA.is_dir(), reason="local overlap-study dumps not present")
 @pytest.mark.parametrize("league", LEAGUES)
 def test_kalshi_game_coverage(league, record_property):
     table = load_league(league)
@@ -341,11 +344,11 @@ def test_kalshi_game_coverage(league, record_property):
 
 
 @pytest.mark.localdata
-@pytest.mark.skipif(not SCRATCH.is_dir(), reason="local overlap-study dumps not present")
+@pytest.mark.skipif(not RAW_DATA.is_dir(), reason="local overlap-study dumps not present")
 @pytest.mark.parametrize("league", LEAGUES)
 def test_polymarket_game_coverage(league):
     table = load_league(league)
-    data = json.loads((SCRATCH / "poly_league_events_window.json").read_text())["events"]
+    data = json.loads((RAW_DATA / "poly_league_events_window.json").read_text())["events"]
     events = [e for e in data if e["league"] == POLY_LEAGUE[league]]
     assert events
     ok = 0

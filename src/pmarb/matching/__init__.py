@@ -1,6 +1,16 @@
-"""Cross-venue participant matching.
+"""Pure candidate proposals for cross-venue game-winner markets.
 
-Holds the per-league team alias tables (``matching/data/<league>.csv``) and the resolver that
-maps a Kalshi code or label, or a Polymarket US code or label, to one canonical team id.
-Tables are data, not code: resolution never guesses, and an ambiguous label raises.
+``normalize.normalize_market(market, diagnostics=issues)`` returns canonical
+participants, YES polarity, and a New York event date with its source. Rejected
+metadata returns ``None`` and appends a diagnostic to the caller-owned list.
+
+``candidates.generate_candidates(markets, diagnostics=issues)`` joins exact
+league, participant-set, and date keys. Each proposal pairs the Polymarket US
+long team with only that team's Kalshi YES contract. Similarity ranks proposals;
+it never establishes equivalence. Groups remain candidates for human review,
+including manual date checks and the proposed settlement exception table.
+
+Team aliases live in ``matching/data/<league>.csv``. Neither normalization nor
+candidate generation makes network requests, writes to a database, or approves
+a group.
 """
