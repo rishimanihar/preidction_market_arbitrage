@@ -30,6 +30,13 @@ def response(body, headers=None):
     return httpx.Response(200, json=body, headers=headers)
 
 
+def event_metadata(row=MARKETS[0], *, series_ticker="KXNFLGAME"):
+    event = {"event_ticker": row["event_ticker"], "series_ticker": series_ticker}
+    if row.get("occurrence_datetime"):
+        event["occurrence_datetime"] = row["occurrence_datetime"]
+    return event
+
+
 @pytest.mark.parametrize("final_cursor", ["", None])
 def test_market_pagination_stops_for_empty_and_null_cursor(final_cursor):
     requests = []
@@ -38,8 +45,10 @@ def test_market_pagination_stops_for_empty_and_null_cursor(final_cursor):
         requests.append(request)
         if request.url.path.endswith("/series/KXNFLGAME"):
             return response({"series": SERIES})
-        if request.url.path.endswith("/events/" + MARKETS[0]["event_ticker"]):
-            return response({"event": {"series_ticker": "KXNFLGAME"}})
+        if request.url.path.endswith("/events"):
+            if request.url.params.get("cursor") is None:
+                return response({"events": [event_metadata()], "cursor": "events-next"})
+            return response({"events": [], "cursor": ""})
         if request.url.path.endswith("/markets"):
             cursor = request.url.params.get("cursor")
             if cursor is None:
@@ -50,20 +59,29 @@ def test_market_pagination_stops_for_empty_and_null_cursor(final_cursor):
     async def run():
         async with client(handler) as http:
             adapter = KalshiAdapter(http, series_tickers=["KXNFLGAME"], clock_utc=lambda: NOW)
-            return [
+            result = [
                 market
                 async for market in adapter.list_markets(
                     NOW - timedelta(days=1), NOW + timedelta(days=3)
                 )
             ]
+            return result, adapter.discovery_pages
 
-    result = asyncio.run(run())
+    result, page_count = asyncio.run(run())
     market_requests = [r for r in requests if r.url.path.endswith("/markets")]
+    event_pages = [r for r in requests if r.url.path.endswith("/events")]
     assert len(market_requests) == 2
+    assert len(event_pages) == 2
+    assert event_pages[0].url.params.get("cursor") is None
+    assert event_pages[1].url.params["cursor"] == "events-next"
+    assert event_pages[0].url.params["limit"] == "200"
+    assert event_pages[0].url.params["series_ticker"] == "KXNFLGAME"
+    assert event_pages[0].url.params["with_nested_markets"] == "false"
     assert market_requests[0].url.params["status"] == "open"
     assert all(r.url.params.get("status") != "all" for r in requests)
     assert all(r.method == "GET" for r in requests)
     assert len(result) == 1
+    assert page_count == 4
 
 
 def test_active_market_with_expired_expected_time_remains_in_discovery():
@@ -76,6 +94,8 @@ def test_active_market_with_expired_expected_time_remains_in_discovery():
     def handler(request):
         if request.url.path.endswith("/series/KXNFLGAME"):
             return response({"series": SERIES})
+        if request.url.path.endswith("/events"):
+            return response({"events": [event_metadata(row)]})
         if request.url.path.endswith("/markets"):
             return response({"markets": [row]})
         if "/events/" in request.url.path:
@@ -100,6 +120,8 @@ def test_active_expired_market_still_obeys_supplied_horizon():
     def handler(request):
         if request.url.path.endswith("/series/KXNFLGAME"):
             return response({"series": SERIES})
+        if request.url.path.endswith("/events"):
+            return response({"events": [event_metadata(row)]})
         if request.url.path.endswith("/markets"):
             return response({"markets": [row]})
         if "/events/" in request.url.path:
@@ -121,6 +143,8 @@ def test_expected_expiration_minus_three_hours_is_horizon_fallback():
     def handler(request):
         if request.url.path.endswith("/series/KXNFLGAME"):
             return response({"series": SERIES})
+        if request.url.path.endswith("/events"):
+            return response({"events": [event_metadata(row)]})
         if request.url.path.endswith("/markets"):
             return response({"markets": [row]})
         if "/events/" in request.url.path:
@@ -146,6 +170,8 @@ def test_series_metadata_is_cached_across_discovery_calls():
         if request.url.path.endswith("/series/KXNFLGAME"):
             series_calls += 1
             return response({"series": SERIES})
+        if request.url.path.endswith("/events"):
+            return response({"events": []})
         if request.url.path.endswith("/markets"):
             return response({"markets": [], "cursor": ""})
         raise AssertionError(request.url)
@@ -158,6 +184,89 @@ def test_series_metadata_is_cached_across_discovery_calls():
 
     asyncio.run(run())
     assert series_calls == 1
+
+
+def test_event_pages_replace_per_market_event_requests_and_join_metadata():
+    requests = []
+    event = {
+        "event_ticker": MARKETS[0]["event_ticker"],
+        "series_ticker": "KXNFLGAME",
+        "occurrence_datetime": "2030-01-06T12:30:00Z",
+        "title": "Synthetic event metadata",
+    }
+
+    def handler(request):
+        requests.append(request)
+        if request.url.path.endswith("/series/KXNFLGAME"):
+            return response({"series": SERIES})
+        if request.url.path.endswith("/events"):
+            return response({"events": [event], "cursor": None})
+        if request.url.path.endswith("/markets"):
+            return response({"markets": MARKETS[:1], "cursor": None})
+        raise AssertionError(request.url)
+
+    async def run():
+        async with client(handler) as http:
+            adapter = KalshiAdapter(http, series_tickers=["KXNFLGAME"], clock_utc=lambda: NOW)
+            markets = [m async for m in adapter.list_markets(NOW, NOW + timedelta(days=2))]
+            return markets, adapter.discovery_pages
+
+    markets, page_count = asyncio.run(run())
+    assert len(markets) == 1
+    assert markets[0].event_start_utc == datetime(2030, 1, 6, 12, 30, tzinfo=UTC)
+    assert markets[0].raw["event"] == event
+    assert len(requests) == 3  # one series, one event page, one market page
+    assert not any("/events/" in request.url.path for request in requests)
+    assert page_count == 2
+
+
+def test_market_missing_from_event_pages_uses_detail_fallback():
+    requests = []
+    event_ticker = MARKETS[0]["event_ticker"]
+    detail = {
+        "event_ticker": event_ticker,
+        "series_ticker": "KXNFLGAME",
+        "occurrence_datetime": "2030-01-06T12:30:00Z",
+    }
+
+    def handler(request):
+        requests.append(request)
+        if request.url.path.endswith("/series/KXNFLGAME"):
+            return response({"series": SERIES})
+        if request.url.path.endswith("/events"):
+            return response({"events": []})
+        if request.url.path.endswith("/events/" + event_ticker):
+            return response({"event": detail})
+        if request.url.path.endswith("/markets"):
+            return response({"markets": MARKETS[:1]})
+        raise AssertionError(request.url)
+
+    async def run():
+        async with client(handler) as http:
+            adapter = KalshiAdapter(http, series_tickers=["KXNFLGAME"], clock_utc=lambda: NOW)
+            return [m async for m in adapter.list_markets(NOW, NOW + timedelta(days=2))]
+
+    markets = asyncio.run(run())
+    assert len(markets) == 1
+    assert markets[0].event_start_utc == datetime(2030, 1, 6, 12, 30, tzinfo=UTC)
+    assert any(request.url.path.endswith("/events/" + event_ticker) for request in requests)
+
+
+def test_event_pages_reject_metadata_from_another_series():
+    def handler(request):
+        if request.url.path.endswith("/series/KXNFLGAME"):
+            return response({"series": SERIES})
+        if request.url.path.endswith("/events"):
+            return response({"events": [event_metadata(series_ticker="KXOTHER")]})
+        raise AssertionError(request.url)
+
+    async def run():
+        async with client(handler) as http:
+            adapter = KalshiAdapter(http, series_tickers=["KXNFLGAME"], clock_utc=lambda: NOW)
+            return [m async for m in adapter.list_markets(NOW, NOW + timedelta(days=2))]
+
+    with pytest.raises(ValueError, match="series_ticker"):
+        asyncio.run(run())
 
 
 def test_get_market_joins_series_through_event_without_market_series_field():
@@ -279,6 +388,8 @@ def test_adapter_emits_only_get_requests_and_never_status_all():
         requests.append(request)
         if request.url.path.endswith("/series/KXNFLGAME"):
             return response({"series": SERIES})
+        if request.url.path.endswith("/events"):
+            return response({"events": [], "cursor": None})
         if request.url.path.endswith("/markets"):
             return response({"markets": [], "cursor": None})
         raise AssertionError(request.url)

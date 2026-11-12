@@ -47,7 +47,7 @@ from pmarb.collector.freshness import (
     is_fresh,
     max_age_for,
 )
-from pmarb.collector.scheduler import PollPlan, build_poll_plan
+from pmarb.collector.scheduler import PollPlan, build_poll_plan, market_ids
 from pmarb.collector.supervisor import RestartBackoff, supervise
 from pmarb.config import Settings
 from pmarb.http import Backoff
@@ -62,7 +62,10 @@ _log = logging.getLogger(__name__)
 FRESHNESS_INTERVAL_S = 0.25
 HEALTH_INTERVAL_S = 10.0
 DISK_FREE_MIN_BYTES = 2 * 1024**3
-DEFAULT_QUEUE_LIMIT = 1000
+DEFAULT_BACKPRESSURE_HIGH_WATER = 20_000
+DEFAULT_BACKPRESSURE_LOW_WATER = 10_000
+DEFAULT_QUEUE_LIMIT = DEFAULT_BACKPRESSURE_HIGH_WATER
+BACKPRESSURE_SUSTAINED_S = 5.0
 
 RECORDING_BACKPRESSURE = "recording_backpressure"
 ADAPTER_ERROR = "adapter_error"
@@ -77,6 +80,16 @@ BooksHook = Callable[[set[str]], Awaitable[None] | None]
 GapHook = Callable[[str], Awaitable[None] | None]
 StartupHook = Callable[[], Awaitable[None] | None]
 _SIGNALS = (signal.SIGINT, signal.SIGTERM)
+
+
+def _once_sample_key(start: datetime | None, now: datetime) -> tuple[int, float]:
+    """Prefer upcoming samples, then the most recent past start, unknown last."""
+    if start is None:
+        return (2, 0.0)
+    seconds = (start - now).total_seconds()
+    if seconds >= 0:
+        return (0, seconds)
+    return (1, -seconds)
 
 
 class DiscoveryLoop(Protocol):
@@ -122,7 +135,9 @@ class Collector:
         db_queue: asyncio.Queue[object] | None = None,
         db_task: DbWriterTask | None = None,
         disk_free: Callable[[Path], int] | None = None,
-        queue_limit: int = DEFAULT_QUEUE_LIMIT,
+        queue_limit: int = DEFAULT_BACKPRESSURE_HIGH_WATER,
+        backpressure_low_water: int | None = None,
+        backpressure_sustained_s: float = BACKPRESSURE_SUSTAINED_S,
         backoff: RestartBackoff | None = None,
         groups: Sequence[EquivalenceGroup] = (),
         markets: Sequence[Market] = (),
@@ -153,7 +168,20 @@ class Collector:
         self._db_queue = db_queue
         self._db_task = db_task
         self._disk_free = disk_free if disk_free is not None else disk_free_bytes
+        # `queue_limit` remains an explicit small-test/legacy override. In normal
+        # operation discovery bursts are allowed to accumulate well past 1,000.
         self._queue_limit = queue_limit
+        self._low_water = (
+            backpressure_low_water
+            if backpressure_low_water is not None
+            else min(DEFAULT_BACKPRESSURE_LOW_WATER, self._queue_limit // 2)
+        )
+        if self._low_water < 0 or self._low_water >= self._queue_limit:
+            raise ValueError("backpressure_low_water must be >= 0 and below high water")
+        if backpressure_sustained_s < 0:
+            raise ValueError("backpressure_sustained_s must be >= 0")
+        self._backpressure_sustained_s = backpressure_sustained_s
+        self._backpressure_since: float | None = None
         self._backoff = backoff if backoff is not None else Backoff()
         self._install_signals_flag = install_signals
         self._discovery = discovery
@@ -176,6 +204,7 @@ class Collector:
         self._discovery_ids: frozenset[str] = frozenset()
         self._index: dict[str, set[str]] = {}
         self._next_discovery_mono: float | None = None
+        self._discovery_cursor = 0
         self._backpressure = False
         self._in_maintenance = False
         self._disk_low = False
@@ -265,6 +294,7 @@ class Collector:
         """One discovery pass and one poll, then the same shutdown as :meth:`stop`."""
         self._bind()
         self._install_signals()
+        started = self._clock.monotonic()
         try:
             await self._run_startup()
             self._start_writers()
@@ -273,8 +303,10 @@ class Collector:
             if not self._stopping and self._discovery is not None:
                 await self._discovery.run_once()
             if not self._stopping:
-                await self._poll_once()
+                await self._drain_db_barrier()
+                await self._poll_once(once=True)
         finally:
+            self._timing("run_once", max(0.0, self._clock.monotonic() - started))
             try:
                 await self.stop()
             finally:
@@ -296,7 +328,9 @@ class Collector:
                     self._emit(None, COLLECTOR_SHUTDOWN, {})
             finally:
                 try:
-                    await self._cancel_and_wait(self._writer_tasks())
+                    await self._cancel_and_wait([self._raw_handle] if self._raw_handle else [])
+                    self._emit_writer_timings()
+                    await self._cancel_and_wait([self._db_handle] if self._db_handle else [])
                 finally:
                     try:
                         if self._on_stopped is not None:
@@ -407,9 +441,10 @@ class Collector:
                 return
             self._health_tick()
 
-    async def _poll_once(self) -> None:
+    async def _poll_once(self, *, once: bool = False) -> None:
         if self._stopping:
             return
+        poll_started = self._clock.monotonic()
         await self._sync_backpressure()
         self._check_disk()
         now_mono = self._clock.monotonic()
@@ -434,27 +469,86 @@ class Collector:
         include_discovery = now_mono >= self._next_discovery_mono
         if include_discovery:
             self._next_discovery_mono = now_mono + plan.sample_interval_s
-        kalshi_ids = plan.ids_for(Venue.KALSHI, include_discovery=include_discovery)
-        poly_ids = plan.ids_for(Venue.POLYMARKET_US, include_discovery=include_discovery)
-        kalshi_books, poly_books = await asyncio.gather(
-            self._fetch(self._kalshi, kalshi_ids),
-            self._fetch(self._polyus, poly_ids),
-        )
-        accepted_mono = self._clock.monotonic()
-        accepted_wall = self._clock.wall()
-        for book in (*kalshi_books, *poly_books):
-            self._accept_book(book, accepted_mono, accepted_wall)
-        await self._sync_backpressure()
-        if self._backpressure:
-            self.store.invalidate(None, RECORDING_BACKPRESSURE)
-        self._apply_book_freshness(accepted_mono, accepted_wall)
-        await self._sync_maintenance(accepted_wall)
+        selected = plan.polled
+        if once and not selected:
+            selected = tuple(
+                sorted(plan.discovery, key=lambda item: _once_sample_key(item.start, now_wall))[
+                    : self._settings.max_polled_groups
+                ]
+            )
+        elif not once and include_discovery:
+            cold = plan.discovery
+            if cold:
+                cap = min(self._settings.max_polled_groups, len(cold))
+                start = self._discovery_cursor % len(cold)
+                selected_cold = cold[start : start + cap]
+                self._discovery_cursor = (start + len(selected_cold)) % len(cold)
+            else:
+                selected_cold = ()
+            selected = plan.polled + tuple(selected_cold)
+        self._polled_ids = frozenset(item.group_id for item in plan.polled)
+        selected_ids = frozenset(item.group_id for item in selected)
+        self._discovery_ids = selected_ids - self._polled_ids
+        hot = tuple(item for item in selected if item.group_id in self._polled_ids)
+        cold = tuple(item for item in selected if item.group_id in self._discovery_ids)
+        batches = [batch for batch in (hot, cold) if batch]
+        if not batches and selected:
+            batches = [tuple(selected)]
+        touched: set[str] = set()
+        for batch in batches:
+            kalshi_ids = market_ids(batch, Venue.KALSHI)
+            poly_ids = market_ids(batch, Venue.POLYMARKET_US)
+            kalshi_result, poly_result = await asyncio.gather(
+                self._timed_fetch(self._kalshi, kalshi_ids),
+                self._timed_fetch(self._polyus, poly_ids),
+            )
+            kalshi_books, kalshi_duration = kalshi_result
+            poly_books, poly_duration = poly_result
+            self._timing(
+                "poll_fetch",
+                kalshi_duration,
+                venue=str(Venue.KALSHI),
+                requested=len(kalshi_ids),
+                returned=len(kalshi_books),
+            )
+            self._timing(
+                "poll_fetch",
+                poly_duration,
+                venue=str(Venue.POLYMARKET_US),
+                requested=len(poly_ids),
+                returned=len(poly_books),
+            )
+            accepted_mono = self._clock.monotonic()
+            accepted_wall = self._clock.wall()
+            for book in (*kalshi_books, *poly_books):
+                self._accept_book(book, accepted_mono, accepted_wall)
+            await self._sync_backpressure()
+            if self._backpressure:
+                self.store.invalidate(None, RECORDING_BACKPRESSURE)
+            self._apply_book_freshness(accepted_mono, accepted_wall)
+            await self._sync_maintenance(accepted_wall)
+            batch_touched = self._groups_for_ids(
+                ((Venue.KALSHI, kalshi_ids), (Venue.POLYMARKET_US, poly_ids))
+            )
+            batch_touched.intersection_update(item.group_id for item in batch)
+            touched |= batch_touched
+            await self._notify_books(batch_touched)
+        if not batches:
+            now_mono = self._clock.monotonic()
+            now_wall = self._clock.wall()
+            await self._sync_maintenance(now_wall)
+            self._apply_book_freshness(now_mono, now_wall)
         self._set_sleep(plan)
-        touched = self._groups_for_ids(
-            ((Venue.KALSHI, kalshi_ids), (Venue.POLYMARKET_US, poly_ids))
-        )
-        await self._notify_books(touched)
+        self._timing("poll", max(0.0, self._clock.monotonic() - poll_started), groups=len(touched))
+        self._emit_writer_timings()
         self.cycles += 1
+
+    async def _drain_db_barrier(self) -> None:
+        """Drain discovery persistence before fetching books for --once."""
+        if self._raw_task is not None:
+            await self._raw_task.drain()
+        if self._db_task is not None:
+            await self._db_task.drain()
 
     async def _freshness_tick(self) -> None:
         self.freshness_ticks += 1
@@ -515,6 +609,13 @@ class Collector:
             return []
         return books
 
+    async def _timed_fetch(
+        self, adapter: VenueAdapter, ids: Sequence[str]
+    ) -> tuple[list[Book], float]:
+        started = self._clock.monotonic()
+        books = await self._fetch(adapter, ids)
+        return books, max(0.0, self._clock.monotonic() - started)
+
     def _record_adapter_error(self, venue: Venue, exc: Exception) -> None:
         self.error_count += 1
         status = getattr(exc, "status_code", None)
@@ -562,13 +663,25 @@ class Collector:
         )
 
     async def _sync_backpressure(self) -> None:
-        if not self._queues_over_limit():
-            self._backpressure = False
-            return
-        self.store.invalidate(None, RECORDING_BACKPRESSURE)
+        over_high = self._queues_over_limit(self._queue_limit)
         if self._backpressure:
+            if not self._queues_over_limit(self._low_water):
+                self._backpressure = False
+                self._backpressure_since = None
+            else:
+                self.store.invalidate(None, RECORDING_BACKPRESSURE)
+            return
+        if not over_high:
+            self._backpressure_since = None
+            return
+        now = self._clock.monotonic()
+        if self._backpressure_since is None:
+            self._backpressure_since = now
+            return
+        if now - self._backpressure_since <= self._backpressure_sustained_s:
             return
         self._backpressure = True
+        self.store.invalidate(None, RECORDING_BACKPRESSURE)
         self._emit(
             None,
             RECORDING_BACKPRESSURE,
@@ -589,9 +702,9 @@ class Collector:
         if not active:
             self._in_maintenance = False
 
-    def _queues_over_limit(self) -> bool:
-        raw_over = self._raw_queue is not None and self._raw_queue.qsize() > self._queue_limit
-        db_over = self._db_queue is not None and self._db_queue.qsize() > self._queue_limit
+    def _queues_over_limit(self, limit: int) -> bool:
+        raw_over = self._raw_queue is not None and self._raw_queue.qsize() > limit
+        db_over = self._db_queue is not None and self._db_queue.qsize() > limit
         return raw_over or db_over
 
     def _set_sleep(self, plan: PollPlan) -> None:
@@ -671,6 +784,28 @@ class Collector:
         except asyncio.QueueFull:
             return
 
+    def _timing(self, phase: str, duration_s: float, **detail: Any) -> None:
+        self._emit(None, "timing", {"phase": phase, "duration_s": duration_s, **detail})
+
+    def _emit_writer_timings(self) -> None:
+        raw_writer = getattr(self._raw_task, "writer", None)
+        if raw_writer is not None:
+            self._timing(
+                "raw_flush",
+                float(getattr(raw_writer, "flush_seconds", 0.0)),
+                cumulative=True,
+                flushes=int(getattr(raw_writer, "flush_count", 0)),
+                bytes=int(getattr(raw_writer, "flush_bytes", 0)),
+            )
+        if self._db_task is not None:
+            self._timing(
+                "db_write",
+                float(getattr(self._db_task, "write_seconds", 0.0)),
+                cumulative=True,
+                batches=int(getattr(self._db_task, "write_batches", 0)),
+                ops=int(getattr(self._db_task, "write_ops", 0)),
+            )
+
     def _on_crash(self, name: str, exc: BaseException) -> None:
         _log.exception("collector loop %s crashed", name)
         self._emit(
@@ -709,7 +844,9 @@ class Collector:
         return ids
 
     async def _notify_books(self, group_ids: set[str]) -> None:
+        started = self._clock.monotonic()
         await _call(self._on_books_updated, set(group_ids))
+        self._timing("evaluate", max(0.0, self._clock.monotonic() - started), groups=len(group_ids))
 
     async def _notify_gap(self, reason: str) -> None:
         await _call(self._on_gap, reason)

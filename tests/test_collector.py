@@ -660,12 +660,15 @@ async def test_discovery_samples_are_flagged_and_not_on_the_fast_cadence() -> No
         assert live_state is not None and later_state is not None
         assert live_state.meta.discovery_sample is False
         assert later_state.meta.discovery_sample is True
-        assert kalshi.calls[0] == ["KX-live", "KX-later"]
+        assert kalshi.calls[0] == ["KX-live"]
+        assert kalshi.calls[1] == ["KX-later"]
+        assert poly.calls[0] == ["pm-live"]
+        assert poly.calls[1] == ["pm-later"]
 
         clock.advance(mono=3, wall=timedelta(seconds=3))
         await park(collector, clock, 2)
-        assert kalshi.calls[1] == ["KX-live"]
-        assert poly.calls[1] == ["pm-live"]
+        assert kalshi.calls[2] == ["KX-live"]
+        assert poly.calls[2] == ["pm-live"]
         held = collector.store.get(market_key(Venue.POLYMARKET_US, "pm-later"))
         assert held is not None
         assert held.meta.received_mono == 0.0
@@ -675,7 +678,60 @@ async def test_discovery_samples_are_flagged_and_not_on_the_fast_cadence() -> No
 
         clock.advance(mono=57, wall=timedelta(seconds=57))
         await park(collector, clock, 3)
-        assert kalshi.calls[2] == ["KX-live", "KX-later"]
+        assert kalshi.calls[3] == ["KX-live"]
+        assert kalshi.calls[4] == ["KX-later"]
+
+
+async def test_once_falls_back_to_soonest_capped_discovery_samples() -> None:
+    clock = FakeClock(wall=T0)
+    log: list[tuple[str, str]] = []
+    groups = []
+    markets = []
+    for index, minutes in enumerate((90, 60, 120, 45, -420)):
+        group, pair_markets = pair(
+            f"g{index}", f"KX{index}", f"pm{index}", T0 + timedelta(minutes=minutes)
+        )
+        groups.append(group)
+        markets.extend(pair_markets)
+    kalshi = FakeVenue(Venue.KALSHI, log)
+    poly = FakeVenue(Venue.POLYMARKET_US, log)
+    collector, _gaps, _updates = build(
+        clock,
+        kalshi,
+        poly,
+        groups=groups,
+        markets=markets,
+        settings=Settings(_env_file=None, max_polled_groups=2),
+    )
+    collector._bind()
+    await collector._poll_once(once=True)
+    assert kalshi.calls == [["KX3", "KX1"]]
+    assert poly.calls == [["pm3", "pm1"]]
+    assert collector.opens_episodes("g3") is False
+    assert collector.opens_episodes("g1") is False
+    assert collector.store.get(market_key(Venue.KALSHI, "KX3")).meta.discovery_sample
+
+
+async def test_once_does_not_notify_unselected_group_sharing_a_market() -> None:
+    clock = FakeClock(wall=T0)
+    log: list[tuple[str, str]] = []
+    selected, selected_markets = pair(
+        "a-selected", "KX-shared", "pm-selected", T0 + timedelta(minutes=60)
+    )
+    later, later_markets = pair("z-later", "KX-unused", "pm-later", T0 + timedelta(minutes=90))
+    later = later.model_copy(update={"members": (selected.members[0], later.members[1])})
+    markets = [selected_markets[0], selected_markets[1], later_markets[1]]
+    collector, _gaps, updates = build(
+        clock,
+        FakeVenue(Venue.KALSHI, log),
+        FakeVenue(Venue.POLYMARKET_US, log),
+        groups=(selected, later),
+        markets=markets,
+        settings=Settings(_env_file=None, max_polled_groups=1),
+    )
+    collector._bind()
+    await collector._poll_once(once=True)
+    assert updates == [{"a-selected"}]
 
 
 @pytest.mark.parametrize(
@@ -795,18 +851,37 @@ async def test_backpressure_invalidates_and_slows_until_drained() -> None:
     seed(collector, clock, Venue.KALSHI, "extra")
     async with Harness(collector):
         await park(collector, clock, 1)
+        assert collector.backpressure is False
+        assert gaps == []
+        while raw_q.qsize() > 5:
+            raw_q.get_nowait()
+        clock.advance(mono=6, wall=timedelta(seconds=6))
+        await park(collector, clock, 2)
+        assert collector.backpressure is False
+        for i in range(11, 22):
+            raw_q.put_nowait(dummy_env(i))
+        clock.advance(mono=1, wall=timedelta(seconds=1))
+        await park(collector, clock, 3)
+        assert collector.backpressure is False
+        clock.advance(mono=5, wall=timedelta(seconds=5))
+        await park(collector, clock, 4)
+        assert collector.backpressure is False
+        clock.advance(mono=0.1, wall=timedelta(seconds=0.1))
+        await collector._sync_backpressure()
         assert collector.backpressure is True
+        assert collector.plan is not None
+        collector._set_sleep(collector.plan)
         assert collector.sleep_s == 60.0
         assert gaps == ["recording_backpressure"]
         for market_id in ("KX", "pm", "extra"):
             venue = Venue.POLYMARKET_US if market_id == "pm" else Venue.KALSHI
             state = collector.store.get(market_key(venue, market_id))
             assert state is not None and state.invalid_reason == "recording_backpressure"
-        assert raw_q.qsize() == 11
-        while not raw_q.empty():
+        assert raw_q.qsize() >= 11
+        while raw_q.qsize() > 5:
             raw_q.get_nowait()
         clock.advance(mono=60, wall=timedelta(seconds=60))
-        await park(collector, clock, 2)
+        await park(collector, clock, 5)
         assert collector.backpressure is False
         assert collector.sleep_s == 1.0
         assert gaps == ["recording_backpressure"]
@@ -816,6 +891,34 @@ async def test_backpressure_invalidates_and_slows_until_drained() -> None:
         assert kx is not None and kx.invalid_reason is None
         assert pm is not None and pm.invalid_reason is None
         assert extra is not None and extra.invalid_reason == "recording_backpressure"
+
+
+async def test_discovery_sized_raw_burst_does_not_invalidate_books() -> None:
+    clock = FakeClock(wall=T0)
+    log: list[tuple[str, str]] = []
+    raw_q: asyncio.Queue[Envelope] = asyncio.Queue()
+    for i in range(1001):
+        raw_q.put_nowait(dummy_env(i))
+    group, markets = pair("g", "KX", "pm", T0)
+    collector, gaps, _updates = build(
+        clock,
+        FakeVenue(Venue.KALSHI, log),
+        FakeVenue(Venue.POLYMARKET_US, log),
+        groups=(group,),
+        markets=markets,
+        raw_queue=raw_q,
+    )
+    seed(collector, clock, Venue.KALSHI, "KX")
+    seed(collector, clock, Venue.POLYMARKET_US, "pm")
+    await collector._sync_backpressure()
+    assert collector.backpressure is False
+    assert gaps == []
+    for venue, market_id in (
+        (Venue.KALSHI, "KX"),
+        (Venue.POLYMARKET_US, "pm"),
+    ):
+        state = collector.store.get(market_key(venue, market_id))
+        assert state is not None and state.invalid_reason is None
 
 
 async def test_disk_guard_stops_raw_logging_and_keeps_summaries() -> None:
@@ -957,7 +1060,8 @@ async def test_shutdown_drains_and_reports_gap(tmp_path) -> None:
     assert writer.pending == 0
     with closing(open_reader(db_path)) as conn:
         kinds = [row[0] for row in conn.execute("SELECT kind FROM collector_events ORDER BY id")]
-    assert kinds == ["collector_shutdown"]
+    assert [kind for kind in kinds if kind != "timing"] == ["collector_shutdown"]
+    assert "timing" in kinds
 
 
 async def test_signal_stop_shuts_down() -> None:

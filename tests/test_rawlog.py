@@ -214,6 +214,29 @@ def test_cancellation_drains_flushes_and_reraises(tmp_path: Path) -> None:
     assert len(list(iter_records([only_file(tmp_path)]))) == 20
 
 
+def test_task_drain_forces_queue_through_fsync(tmp_path: Path) -> None:
+    async def main() -> None:
+        writer = RawLogWriter(tmp_path, clock=Clock())
+        queue: asyncio.Queue[Envelope] = asyncio.Queue()
+        raw_task = RawLogTask(writer, queue, flush_interval=3600)
+        task = asyncio.create_task(raw_task.run())
+        try:
+            for i in range(3):
+                queue.put_nowait(env(i))
+            await raw_task.drain()
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+    asyncio.run(main())
+    assert [record.recv_mono_ns for record in iter_records([only_file(tmp_path)])] == [
+        1000,
+        1001,
+        1002,
+    ]
+
+
 def test_task_flushes_on_interval(tmp_path: Path) -> None:
     async def main() -> None:
         w = RawLogWriter(tmp_path, clock=Clock())

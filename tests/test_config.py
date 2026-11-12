@@ -28,8 +28,8 @@ def test_defaults_match_plan() -> None:
     assert s.data_dir == Path("./data")
     assert s.kalshi_api_key_id is None and s.polyus_theta is None
     assert s.kalshi_member_precision is None
-    assert (s.kalshi_books_rps, s.kalshi_discovery_rps) == (3.0, 1.0)
-    assert (s.polyus_books_rps, s.polyus_discovery_rps) == (4.0, 1.0)
+    assert (s.kalshi_books_rps, s.kalshi_discovery_rps) == (3.0, 3.0)
+    assert (s.polyus_books_rps, s.polyus_discovery_rps) == (4.0, 3.0)
     assert (s.http_connect_timeout_s, s.http_read_timeout_s) == (3.0, 5.0)
     assert s.raw_log_max_days == 30 and s.raw_log_max_bytes == 20 * 1024**3
     assert s.min_touch_qty == 10 and s.display_tz == "America/Chicago"

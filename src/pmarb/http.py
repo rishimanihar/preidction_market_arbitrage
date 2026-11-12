@@ -162,6 +162,7 @@ class ObservationHttpClient:
         self._buckets: dict[BucketKey, TokenBucket] = (
             dict(buckets) if buckets is not None else self._default_buckets(s)
         )
+        self._request_metrics: dict[BucketKey, dict[str, int]] = {}
         self._client = httpx.AsyncClient(
             transport=transport,
             timeout=httpx.Timeout(
@@ -222,9 +223,13 @@ class ObservationHttpClient:
         if bucket is None:
             raise ValueError(f"no rate bucket for ({venue}, {purpose})")
 
+        metrics = self._request_metrics.setdefault((venue, purpose), {"requests": 0, "attempts": 0})
+        metrics["requests"] += 1
+
         last_status: int | None = None
         for attempt in range(self.max_retries + 1):
             await bucket.acquire()
+            metrics["attempts"] += 1
             try:
                 response, body = await self._fetch(url, params)
             except httpx.TransportError as exc:
@@ -248,6 +253,11 @@ class ObservationHttpClient:
         raise RetriesExhaustedError(
             f"{reason} after {self.max_retries + 1} attempts", status_code=last_status
         )
+
+    def request_metrics(self, venue: str, purpose: str) -> dict[str, int]:
+        """Return a copy of logical request and HTTP attempt counts."""
+        metrics = self._request_metrics.get((venue, purpose), {})
+        return {"requests": metrics.get("requests", 0), "attempts": metrics.get("attempts", 0)}
 
     async def _fetch(
         self, url: str, params: Mapping[str, Any] | None

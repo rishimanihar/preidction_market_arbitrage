@@ -152,6 +152,9 @@ class RawLogWriter:
         self._buf: list[tuple[Path, bytes]] = []
         self._buf_lock = threading.Lock()
         self._io_lock = threading.Lock()
+        self.flush_seconds = 0.0
+        self.flush_count = 0
+        self.flush_bytes = 0
 
     def path_for(self, env: Envelope, when: datetime) -> Path:
         stream = "checkpoints" if env.kind == "checkpoint" else "raw"
@@ -175,10 +178,13 @@ class RawLogWriter:
         On an I/O error each file is truncated back to its pre-write size where possible and the
         whole batch is put back at the head of the buffer, then the error is re-raised.
         """
+        started = time.monotonic()
         with self._io_lock:
             with self._buf_lock:
                 batch, self._buf = self._buf, []
             if not batch:
+                self.flush_seconds += time.monotonic() - started
+                self.flush_count += 1
                 return 0
             grouped: dict[Path, list[bytes]] = {}
             for path, data in batch:
@@ -207,6 +213,9 @@ class RawLogWriter:
                 with self._buf_lock:
                     self._buf[:0] = batch
                 raise
+            self.flush_seconds += time.monotonic() - started
+            self.flush_count += 1
+            self.flush_bytes += written
             return written
 
     def _log_files(self) -> list[tuple[datetime, Path, int]]:
@@ -383,28 +392,89 @@ class RawLogTask:
         self.writer = writer
         self.queue = queue
         self.flush_interval = flush_interval
+        self._pending_count = 0
+        self._flush_requested = asyncio.Event()
+        self._runner: asyncio.Task[None] | None = None
 
     def _drain(self) -> None:
         while True:
             try:
                 self.writer.append(self.queue.get_nowait())
+                self._pending_count += 1
             except asyncio.QueueEmpty:
                 return
 
+    def _mark_flushed(self) -> None:
+        count, self._pending_count = self._pending_count, 0
+        for _ in range(count):
+            self.queue.task_done()
+
+    async def drain(self) -> None:
+        """Force queued envelopes through gzip write and fsync, then return."""
+        runner = self._runner
+        if runner is None:
+            await asyncio.sleep(0)
+            runner = self._runner
+        if runner is None or runner.done():
+            raise RuntimeError("raw log writer is not running")
+        self._flush_requested.set()
+        joined = asyncio.create_task(self.queue.join())
+        try:
+            done, _pending = await asyncio.wait(
+                {joined, runner}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if joined in done:
+                await joined
+                return
+            error = runner.exception()
+            raise RuntimeError("raw log writer stopped before draining its queue") from error
+        finally:
+            if not joined.done():
+                joined.cancel()
+                await asyncio.gather(joined, return_exceptions=True)
+
     async def run(self) -> None:
+        self._runner = asyncio.current_task()
         now = time.monotonic
         next_flush = now() + self.flush_interval
         try:
             while True:
+                get_task = asyncio.create_task(self.queue.get())
+                flush_task = asyncio.create_task(self._flush_requested.wait())
+                received = False
                 try:
-                    env = await asyncio.wait_for(self.queue.get(), max(0.0, next_flush - now()))
-                    self.writer.append(env)
-                except TimeoutError:
-                    pass
-                if now() >= next_flush:
-                    await asyncio.to_thread(self.writer.flush)
-                    next_flush = now() + self.flush_interval
+                    done, _pending = await asyncio.wait(
+                        {get_task, flush_task},
+                        timeout=max(0.0, next_flush - now()),
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if get_task in done:
+                        self.writer.append(get_task.result())
+                        self._pending_count += 1
+                        received = True
+                    if flush_task in done:
+                        self._flush_requested.clear()
+                        self._drain()
+                        await asyncio.to_thread(self.writer.flush)
+                        self._mark_flushed()
+                        next_flush = now() + self.flush_interval
+                    elif now() >= next_flush:
+                        self._drain()
+                        await asyncio.to_thread(self.writer.flush)
+                        self._mark_flushed()
+                        next_flush = now() + self.flush_interval
+                except asyncio.CancelledError:
+                    if get_task.done() and not get_task.cancelled() and not received:
+                        self.writer.append(get_task.result())
+                        self._pending_count += 1
+                    raise
+                finally:
+                    for task in (get_task, flush_task):
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(get_task, flush_task, return_exceptions=True)
         except asyncio.CancelledError:
             self._drain()
             self.writer.flush()
+            self._mark_flushed()
             raise

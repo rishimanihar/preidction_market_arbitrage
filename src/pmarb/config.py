@@ -66,9 +66,9 @@ class Settings(BaseSettings):
 
     # Rate budgets (requests per second)
     kalshi_books_rps: float = Field(default=3.0, gt=0)
-    kalshi_discovery_rps: float = Field(default=1.0, gt=0)
+    kalshi_discovery_rps: float = Field(default=3.0, gt=0)
     polyus_books_rps: float = Field(default=4.0, gt=0)
-    polyus_discovery_rps: float = Field(default=1.0, gt=0)
+    polyus_discovery_rps: float = Field(default=3.0, gt=0)
 
     # HTTP
     http_connect_timeout_s: float = Field(default=3.0, gt=0)

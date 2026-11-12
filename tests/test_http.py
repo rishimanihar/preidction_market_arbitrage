@@ -88,6 +88,7 @@ async def test_429_then_200_honors_retry_after_and_user_agent() -> None:
     assert sleeps == [7.0]
     assert calls[0].headers["user-agent"] == f"pmarb/{__version__}"
     assert calls[0].url.params["limit"] == "1"
+    assert client.request_metrics("kalshi", "discovery") == {"requests": 1, "attempts": 2}
 
 
 async def test_503_backoff_then_exhausted() -> None:
@@ -214,11 +215,11 @@ async def test_separate_buckets_per_venue_and_purpose() -> None:
         b = client._buckets
         assert len({id(v) for v in b.values()}) == 5
         assert b[("kalshi", "books")].rate == 3.0
-        assert b[("kalshi", "discovery")].rate == 1.0
+        assert b[("kalshi", "discovery")].rate == 3.0
         assert b[("kalshi", "gamestate")].rate == 1.0
         assert b[("kalshi", "gamestate")].burst == 1.0
         assert b[("polyus", "books")].rate == 4.0
-        assert b[("polyus", "discovery")].rate == 1.0
+        assert b[("polyus", "discovery")].rate == 3.0
         with pytest.raises(ValueError, match="no rate bucket"):
             await client.get(KALSHI, venue="gemini", purpose="books")
 

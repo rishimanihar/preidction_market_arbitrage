@@ -18,7 +18,7 @@ import pytest
 
 from pmarb import cli
 from pmarb.app import queries
-from pmarb.collector.books import BookMeta, BookStore
+from pmarb.collector.books import BookMeta, BookStore, market_key
 from pmarb.collector.clock import FakeClock
 from pmarb.collector.discovery import Discovery
 from pmarb.collector.episodes import EpisodeTracker
@@ -29,6 +29,7 @@ from pmarb.collector.evaluator import (
     should_persist_assessment,
 )
 from pmarb.collector.factory import build_collector
+from pmarb.collector.persist import WriteSink
 from pmarb.collector.registry import Registry
 from pmarb.collector.review_mode import AUTO_REVIEWER, ReviewMode
 from pmarb.collector.runtime import Collector
@@ -50,7 +51,7 @@ from pmarb.models import (
     Venue,
 )
 from pmarb.review.spool import ReviewDecision, write_decision
-from pmarb.storage.db import open_writer, upsert_episode
+from pmarb.storage.db import _apply_batch, open_writer, upsert_episode
 from pmarb.venues.kalshi.rest import KalshiAdapter
 from pmarb.venues.polymarket_us.rest import PolymarketUSAdapter
 from tests.test_matching import kalshi, poly
@@ -364,6 +365,41 @@ def _quote(settings: Settings, market_k: Market, market_p: Market) -> list:
 async def _discover_and_poll(pipe: Pipe) -> None:
     await pipe.discover()
     await pipe.poll()
+
+
+def test_discovery_catalog_writes_share_one_writer_unit(tmp_path) -> None:
+    pipe = _pipe(tmp_path)
+    queue: asyncio.Queue[object] = asyncio.Queue()
+    sink = WriteSink(queue)
+    pipe.discovery._enqueue = sink
+    pipe.discovery._review._enqueue = sink
+    try:
+        asyncio.run(pipe.discover())
+        assert queue.qsize() == 1
+        pipe.collector._db_queue = queue
+        pipe.collector._queue_limit = 10
+        pipe.collector._low_water = 5
+        group = next(iter(pipe.registry.groups.values()))
+        for member in group.members:
+            adapter = pipe.kalshi if member.venue is Venue.KALSHI else pipe.polyus
+            market_id = member.market_id
+            book = asyncio.run(adapter.get_books([market_id]))[0]
+            pipe.collector._accept_book(book, MONO, WALL)
+        asyncio.run(pipe.collector._sync_backpressure())
+        assert pipe.collector.backpressure is False
+        assert not pipe.collector.events or all(
+            event.kind != "recording_backpressure" for event in pipe.collector.events
+        )
+        for member in group.members:
+            state = pipe.collector.store.get(market_key(member.venue, member.market_id))
+            assert state is not None and state.invalid_reason is None
+        write = queue.get_nowait()
+        assert _apply_batch(pipe.conn, [write]) == 0
+        assert pipe.conn.execute("SELECT count(*) FROM markets").fetchone()[0] == 2
+        assert pipe.conn.execute("SELECT count(*) FROM rules_versions").fetchone()[0] == 2
+        assert pipe.conn.execute("SELECT count(*) FROM groups").fetchone()[0] == 1
+    finally:
+        pipe.conn.close()
 
 
 def test_unknown_fees_reject_with_venue_reasons(tmp_path) -> None:
@@ -809,6 +845,32 @@ async def test_on_gap_closes_every_open_episode(tmp_path) -> None:
         pipe.conn.close()
 
 
+async def test_sustained_backpressure_closes_open_episodes(tmp_path) -> None:
+    pipe = _pipe(tmp_path)
+    try:
+        await pipe.discover()
+        await pipe.poll()
+        assert any(row[1] is None for row in pipe.episodes())
+        queue: asyncio.Queue[object] = asyncio.Queue()
+        for _ in range(11):
+            queue.put_nowait(object())
+        pipe.collector._raw_queue = queue  # exercise the real queue-depth guard
+        pipe.collector._queue_limit = 10
+        pipe.collector._low_water = 5
+        await pipe.collector._sync_backpressure()
+        assert pipe.collector.backpressure is False
+        pipe.clock.advance(mono=5, wall=timedelta(seconds=5))
+        await pipe.collector._sync_backpressure()
+        assert pipe.collector.backpressure is False
+        pipe.clock.advance(mono=0.1, wall=timedelta(seconds=0.1))
+        await pipe.collector._sync_backpressure()
+        assert pipe.collector.backpressure is True
+        assert any(row[1] == "data_gap" for row in pipe.episodes())
+        assert sum(event.kind == "recording_backpressure" for event in pipe.collector.events) == 1
+    finally:
+        pipe.conn.close()
+
+
 async def test_gap_longer_than_two_cadences_closes_with_data_gap(tmp_path) -> None:
     pipe = _pipe(tmp_path)
     try:
@@ -906,7 +968,7 @@ def test_startup_closes_episodes_left_open(tmp_path) -> None:
 
 
 def test_scan_once_writes_rows_the_review_queries_can_read(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
+    tmp_path, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
     monkeypatch.setattr("pmarb.collector.factory.KalshiAdapter", FakeKalshi)
     monkeypatch.setattr("pmarb.collector.factory.PolymarketUSAdapter", FakePoly)
@@ -914,6 +976,10 @@ def test_scan_once_writes_rows_the_review_queries_can_read(
     monkeypatch.setenv("PMARB_KALSHI_MEMBER_PRECISION", "0.0001")
     monkeypatch.setenv("PMARB_POLYUS_THETA", "0.075")
     cli.main(["scan", "--once"])
+    timing_output = capsys.readouterr().out
+    assert "TIMING total=" in timing_output
+    assert "venue=kalshi" in timing_output
+    assert "venue=polymarket_us" in timing_output
     conn = queries.open_reader(tmp_path / "pmarb.sqlite")
     try:
         assessments = queries.fetch_assessments(conn, "indicative")
@@ -922,8 +988,74 @@ def test_scan_once_writes_rows_the_review_queries_can_read(
         assert episodes
         review = queries.fetch_group_review(conn, str(episodes[0]["group_id"]))
         assert review is not None
+        timing_phases = {
+            json.loads(row[0])["phase"]
+            for row in conn.execute("SELECT detail_json FROM collector_events WHERE kind='timing'")
+        }
+        assert {
+            "discovery_venue",
+            "rules_hash",
+            "poll_fetch",
+            "poll",
+            "evaluate",
+            "db_write",
+            "raw_flush",
+        } <= timing_phases
     finally:
         conn.close()
+
+
+def test_stale_books_do_not_persist_bogus_rejections(tmp_path) -> None:
+    pipe = _pipe(tmp_path)
+    try:
+        asyncio.run(_discover_and_poll(pipe))
+        group_id = next(iter(pipe.registry.groups))
+        before = len(pipe.assessments())
+        pipe.clock.advance(mono=10, wall=timedelta(seconds=10))
+        for member in pipe.registry.groups[group_id].members:
+            key = market_key(member.venue, member.market_id)
+            state = pipe.collector.store.get(key)
+            assert state is not None
+            stale_book = state.book.model_copy(
+                update={
+                    "received_monotonic": MONO - 100,
+                    "received_utc": WALL - timedelta(seconds=100),
+                }
+            )
+            fresh_meta = BookMeta(
+                received_mono=pipe.clock.monotonic(),
+                received_wall=pipe.clock.wall(),
+                connection_generation=state.meta.connection_generation,
+                source="poll",
+                cached=False,
+            )
+            assert pipe.collector.store.put(stale_book, fresh_meta)
+        asyncio.run(pipe.evaluator.on_books_updated({group_id}))
+        assert len(pipe.assessments()) == before
+        assert any(event.kind == "evaluation_error" for event in pipe.collector.events)
+    finally:
+        pipe.conn.close()
+
+
+def test_once_fallback_samples_persist_assessments_without_episodes(tmp_path) -> None:
+    pipe = _pipe(tmp_path)
+    try:
+        asyncio.run(pipe.discover())
+        cold_markets = [
+            market.model_copy(update={"event_start_utc": WALL + timedelta(hours=2)})
+            for market in pipe.registry.markets.values()
+        ]
+        pipe.collector.set_universe(tuple(pipe.registry.groups.values()), cold_markets)
+        asyncio.run(pipe.collector._poll_once(once=True))
+        group_id = next(iter(pipe.registry.groups))
+        assert not pipe.collector.opens_episodes(group_id)
+        assert len(pipe.assessments()) > 0
+        assert pipe.episodes() == []
+        for member in pipe.registry.groups[group_id].members:
+            state = pipe.collector.store.get(market_key(member.venue, member.market_id))
+            assert state is not None and state.meta.discovery_sample
+    finally:
+        pipe.conn.close()
 
 
 def _stream_markets() -> tuple[Market, Market, Market, Market]:

@@ -575,6 +575,31 @@ def test_writer_drains_on_cancel_and_reraises(tmp_path: Path) -> None:
     assert kinds == ["a", "b", "c", "d", "e"]
 
 
+def test_writer_drain_forces_pending_transaction_to_commit(tmp_path: Path) -> None:
+    path = tmp_path / "pmarb.sqlite"
+    queue: asyncio.Queue[object] = asyncio.Queue()
+    writer = DbWriterTask(
+        path, queue, commit_interval_s=3600, batch_size=100, checkpoint_interval_s=3600
+    )
+
+    async def main() -> None:
+        task = asyncio.create_task(writer.run())
+        try:
+            await writer.ready.wait()
+            queue.put_nowait(_Insert("drained"))
+            await writer.drain()
+            with closing(open_reader(path)) as reader:
+                assert reader.execute("SELECT kind FROM collector_events").fetchone() == (
+                    "drained",
+                )
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+    asyncio.run(main())
+
+
 def test_failing_op_is_counted_logged_and_later_ops_commit(tmp_path: Path) -> None:
     path = tmp_path / "pmarb.sqlite"
     queue: asyncio.Queue[object] = asyncio.Queue()
