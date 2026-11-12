@@ -170,14 +170,7 @@ def parse_book(
             raise TypeError("orderbook_fp must be an object")
         yes_bids = _levels(orderbook_fp.get("yes_dollars", []))
         no_bids = _levels(orderbook_fp.get("no_dollars", []))
-        yes = sorted(
-            (Level(price=Decimal(1) - level.price, size=level.size) for level in no_bids),
-            key=lambda level: level.price,
-        )
-        no = sorted(
-            (Level(price=Decimal(1) - level.price, size=level.size) for level in yes_bids),
-            key=lambda level: level.price,
-        )
+        yes, no = _acquisition_ladders(yes_bids, no_bids)
         if (
             yes_bids
             and no_bids
@@ -206,3 +199,40 @@ def parse_book(
         valid=reason is None,
         invalid_reason=reason,
     )
+
+
+def normalize_orderbook_levels(
+    yes_levels: Any,
+    no_levels: Any,
+    *,
+    no_prices_are_yes: bool = False,
+) -> tuple[list[Level], list[Level]]:
+    """Normalize Kalshi bid levels to the REST parser's YES/NO acquisition ladders.
+
+    WS subscriptions with ``use_yes_price=true`` report NO-side prices in the
+    YES price coordinate. In that case those levels are already YES asks and
+    must not be complemented a second time.
+    """
+    yes_bids, no_bids = _levels(yes_levels), _levels(no_levels)
+    if no_prices_are_yes:
+        yes_asks = sorted(no_bids, key=lambda level: level.price)
+        no_asks = sorted(
+            (Level(price=Decimal(1) - level.price, size=level.size) for level in yes_bids),
+            key=lambda level: level.price,
+        )
+        return yes_asks, no_asks
+    return _acquisition_ladders(yes_bids, no_bids)
+
+
+def _acquisition_ladders(
+    yes_bids: list[Level], no_bids: list[Level]
+) -> tuple[list[Level], list[Level]]:
+    yes = sorted(
+        (Level(price=Decimal(1) - level.price, size=level.size) for level in no_bids),
+        key=lambda level: level.price,
+    )
+    no = sorted(
+        (Level(price=Decimal(1) - level.price, size=level.size) for level in yes_bids),
+        key=lambda level: level.price,
+    )
+    return yes, no
