@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     http_read_timeout_s: float = Field(default=5.0, gt=0)
     http_max_body_bytes: int = Field(default=5 * 1024 * 1024, gt=0)
 
+    # Book-poll time budget. One venue's fetch in a poll cycle (token waits,
+    # attempts, and backoff included) gets fraction × the batch's freshness
+    # window, capped at max. A failing venue then gives up, and its books go
+    # invalid, before a healthy venue's books could age out.
+    poll_fetch_budget_fraction: float = Field(default=0.75, gt=0, lt=1)
+    poll_fetch_budget_max_s: float = Field(default=10.0, gt=0)
+
     # Raw log retention
     raw_log_max_days: int = Field(default=30, ge=1)
     raw_log_max_bytes: int = Field(default=20 * 1024**3, ge=1)

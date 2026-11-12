@@ -13,9 +13,9 @@ from urllib.parse import quote
 from pmarb.config import Settings
 from pmarb.fees.polymarket_us import PolymarketUSFeeModel
 from pmarb.fees.scenario import POLYUS_CONSERVATIVE_THETA, account_fee_value, with_scenario
-from pmarb.http import ObservationHttpClient
+from pmarb.http import ObservationHttpClient, UnexpectedStatusError
 from pmarb.models import Book, Market, Venue
-from pmarb.protocols import BookEvent, FeeModel
+from pmarb.protocols import BookEvent, FeeModel, collect_books
 from pmarb.venues.polymarket_us.parse import is_eligible, parse_book, parse_market
 
 BASE_URL = "https://gateway.polymarket.us"
@@ -54,20 +54,37 @@ class PolymarketUSAdapter:
         self.discovery_pages = 0
 
     async def _get_json(
-        self, path: str, *, purpose: str, params: dict[str, Any] | None = None
+        self,
+        path: str,
+        *,
+        purpose: str,
+        params: dict[str, Any] | None = None,
+        route: str | None = None,
     ) -> Any:
+        """GET ``path``. ``route`` is the id-free label used in errors (default ``path``)."""
+        route = route or path
         result = await self.http.get(
-            f"{BASE_URL}{path}", venue="polyus", purpose=purpose, params=params
+            f"{BASE_URL}{path}", venue="polyus", purpose=purpose, params=params, route=route
         )
         if not 200 <= result.status_code < 300:
-            raise RuntimeError(f"Polymarket US GET {path} returned HTTP {result.status_code}")
+            raise UnexpectedStatusError(
+                f"Polymarket US GET {route} returned HTTP {result.status_code}",
+                status_code=result.status_code,
+                venue="polyus",
+                route=route,
+            )
         return result.json()
 
-    async def _pages(self, path: str, collection: str, *, purpose: str) -> AsyncIterator[Any]:
+    async def _pages(
+        self, path: str, collection: str, *, purpose: str, route: str | None = None
+    ) -> AsyncIterator[Any]:
         offset = 0
         while True:
             payload = await self._get_json(
-                path, purpose=purpose, params={"limit": PAGE_SIZE, "offset": offset}
+                path,
+                purpose=purpose,
+                params={"limit": PAGE_SIZE, "offset": offset},
+                route=route,
             )
             if purpose == "discovery":
                 self.discovery_pages += 1
@@ -97,7 +114,9 @@ class PolymarketUSAdapter:
         }
         for league in sorted(self.leagues & discovered):
             path = f"/v2/leagues/{quote(league, safe='')}/events"
-            async for event in self._pages(path, "events", purpose="discovery"):
+            async for event in self._pages(
+                path, "events", purpose="discovery", route="/v2/leagues/{league}/events"
+            ):
                 if "markets" not in event:
                     raise ValueError("Polymarket US event response is missing 'markets'")
                 markets = event["markets"]
@@ -116,7 +135,9 @@ class PolymarketUSAdapter:
 
     async def get_market(self, slug: str) -> Market:
         payload = await self._get_json(
-            f"/v1/market/slug/{quote(slug, safe='')}", purpose="discovery"
+            f"/v1/market/slug/{quote(slug, safe='')}",
+            purpose="discovery",
+            route="/v1/market/slug/{slug}",
         )
         raw = payload.get("market")
         if not isinstance(raw, dict):
@@ -124,9 +145,19 @@ class PolymarketUSAdapter:
         return parse_market(raw)
 
     async def get_books(self, market_ids: Sequence[str]) -> list[Book]:
-        async def fetch(slug: str) -> Book:
+        """One request per market, all concurrent (the books bucket paces them).
+
+        A failed market does not discard the others, and it does not leave the
+        other requests running: every request finishes before this returns. The
+        collector gets :class:`~pmarb.protocols.PartialBooksError` with the
+        books that arrived.
+        """
+
+        async def fetch(slug: str) -> list[Book]:
             payload = await self._get_json(
-                f"/v1/markets/{quote(slug, safe='')}/book", purpose="books"
+                f"/v1/markets/{quote(slug, safe='')}/book",
+                purpose="books",
+                route="/v1/markets/{slug}/book",
             )
             received_utc = _utc(self._clock_utc())
             received_monotonic = self._monotonic()
@@ -140,9 +171,13 @@ class PolymarketUSAdapter:
                 raise ValueError(
                     f"Polymarket US book identity mismatch: requested {slug!r}, received {book.market_id!r}"
                 )
-            return book
+            return [book]
 
-        return list(await asyncio.gather(*(fetch(slug) for slug in market_ids)))
+        slugs = list(market_ids)
+        results = await asyncio.gather(*(fetch(slug) for slug in slugs), return_exceptions=True)
+        return collect_books(
+            self.venue, [([slug], result) for slug, result in zip(slugs, results, strict=True)]
+        )
 
     def book_stream(self, market_ids: Sequence[str]) -> AsyncIterator[BookEvent] | None:
         """Streaming is a later milestone; the M1 adapter polls REST."""

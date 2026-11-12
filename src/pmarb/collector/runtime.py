@@ -20,6 +20,15 @@ open episodes.
 ``maintenance`` (once, on entering the window), and ``collector_shutdown``.
 Book invalid reasons also include ``stale``, ``cached``, ``adapter_error``,
 and ``generation``. A heartbeat does not refresh book age.
+
+Book polls are bounded and isolated per venue. Each venue's fetch gets a time
+budget below the batch's freshness window (``poll_fetch_budget_fraction``).
+The HTTP client stops retrying at that deadline, and a clock-based backstop
+cancels an adapter that overruns it. Each venue's books are accepted, and
+stamped, as soon as that venue's fetch returns, so a slow or failing venue
+neither delays nor ages the other venue's books. Cycles run at a fixed rate:
+the next one starts ``sleep_s`` after the previous one started, not after it
+ended. Failures are counted by cause (``poll_failures_by_cause`` in health).
 """
 
 from __future__ import annotations
@@ -47,12 +56,12 @@ from pmarb.collector.freshness import (
     is_fresh,
     max_age_for,
 )
-from pmarb.collector.scheduler import PollPlan, build_poll_plan, market_ids
+from pmarb.collector.scheduler import PollPlan, ScheduledGroup, build_poll_plan, market_ids
 from pmarb.collector.supervisor import RestartBackoff, supervise
 from pmarb.config import Settings
-from pmarb.http import Backoff
+from pmarb.http import Backoff, Deadline, failure_cause, failure_detail, request_deadline
 from pmarb.models import Book, EquivalenceGroup, GroupStatus, Market, Venue
-from pmarb.protocols import VenueAdapter
+from pmarb.protocols import PartialBooksError, VenueAdapter
 from pmarb.storage.db import DbWriterTask, Write, insert_collector_event
 from pmarb.storage.rawlog import Envelope, RawLogTask, disk_free_bytes
 from pmarb.venues.polymarket_us.maintenance import in_maintenance
@@ -67,8 +76,17 @@ DEFAULT_BACKPRESSURE_LOW_WATER = 10_000
 DEFAULT_QUEUE_LIMIT = DEFAULT_BACKPRESSURE_HIGH_WATER
 BACKPRESSURE_SUSTAINED_S = 5.0
 
+# The HTTP client stops at the fetch deadline itself. The backstop only fires
+# for an adapter that does not honour it, a little later so the client's richer
+# error wins the race.
+FETCH_BACKSTOP_GRACE_S = 0.25
+# A repeated failure with the same cause is logged at WARNING once per this
+# many polls (every poll is still a collector event).
+ERROR_LOG_REPEAT_EVERY = 10
+
 RECORDING_BACKPRESSURE = "recording_backpressure"
 ADAPTER_ERROR = "adapter_error"
+ADAPTER_RECOVERED = "adapter_recovered"
 COLLECTOR_SHUTDOWN = "collector_shutdown"
 LOOP_CRASH = "loop_crash"
 HEALTH = "health"
@@ -90,6 +108,20 @@ def _once_sample_key(start: datetime | None, now: datetime) -> tuple[int, float]
     if seconds >= 0:
         return (0, seconds)
     return (1, -seconds)
+
+
+class FetchBudgetExceededError(Exception):
+    """An adapter's ``get_books`` was still running after its poll budget."""
+
+    def __init__(self, venue: Venue, budget_s: float, requested: int) -> None:
+        super().__init__(
+            f"{venue} get_books for {requested} markets did not return within its "
+            f"{budget_s:.2f}s poll budget"
+        )
+        self.venue = venue
+        self.budget_s = budget_s
+        self.requested = requested
+        self.cause = "budget_exceeded"
 
 
 class DiscoveryLoop(Protocol):
@@ -198,6 +230,11 @@ class Collector:
         self.sleep_s = self.cadence_s
         self.error_count = 0
         self.http_429_count = 0
+        # venue -> failure cause (http_503, ConnectTimeout, cooldown, ...) -> count
+        self.poll_failures: dict[str, dict[str, int]] = {}
+        self._failure_streak: dict[str, int] = {}
+        self._streak_cause: dict[str, str] = {}
+        self._loop_lag_max_s = 0.0
         self.plan: PollPlan | None = None
 
         self._polled_ids: frozenset[str] = frozenset()
@@ -422,16 +459,24 @@ class Collector:
 
     async def _poll_loop(self) -> None:
         while not self._stopping:
+            started = self._clock.monotonic()
             await self._poll_once()
             if self._stopping:
                 return
-            await self._clock.sleep(self.sleep_s)
+            # Fixed rate: a cycle's own duration comes out of the sleep, so the
+            # period is the cadence, not the cadence plus the fetch time.
+            elapsed = max(0.0, self._clock.monotonic() - started)
+            await self._clock.sleep(max(0.0, self.sleep_s - elapsed))
 
     async def _freshness_loop(self) -> None:
         while not self._stopping:
+            before = self._clock.monotonic()
             await self._clock.sleep(FRESHNESS_INTERVAL_S)
             if self._stopping:
                 return
+            # How late the tick woke: time the event loop spent on other work.
+            lag = self._clock.monotonic() - before - FRESHNESS_INTERVAL_S
+            self._loop_lag_max_s = max(self._loop_lag_max_s, lag)
             await self._freshness_tick()
 
     async def _health_loop(self) -> None:
@@ -498,35 +543,32 @@ class Collector:
         for batch in batches:
             kalshi_ids = market_ids(batch, Venue.KALSHI)
             poly_ids = market_ids(batch, Venue.POLYMARKET_US)
+            budget_s = self.fetch_budget_s(batch)
+            # Both venues start together (low skew). Each accepts its own books
+            # when its fetch returns, and each is bounded by ``budget_s``.
             kalshi_result, poly_result = await asyncio.gather(
-                self._timed_fetch(self._kalshi, kalshi_ids),
-                self._timed_fetch(self._polyus, poly_ids),
+                self._timed_fetch(self._kalshi, kalshi_ids, budget_s),
+                self._timed_fetch(self._polyus, poly_ids, budget_s),
             )
-            kalshi_books, kalshi_duration = kalshi_result
-            poly_books, poly_duration = poly_result
-            self._timing(
-                "poll_fetch",
-                kalshi_duration,
-                venue=str(Venue.KALSHI),
-                requested=len(kalshi_ids),
-                returned=len(kalshi_books),
-            )
-            self._timing(
-                "poll_fetch",
-                poly_duration,
-                venue=str(Venue.POLYMARKET_US),
-                requested=len(poly_ids),
-                returned=len(poly_books),
-            )
-            accepted_mono = self._clock.monotonic()
-            accepted_wall = self._clock.wall()
-            for book in (*kalshi_books, *poly_books):
-                self._accept_book(book, accepted_mono, accepted_wall)
+            for venue, ids, (returned, duration) in (
+                (Venue.KALSHI, kalshi_ids, kalshi_result),
+                (Venue.POLYMARKET_US, poly_ids, poly_result),
+            ):
+                self._timing(
+                    "poll_fetch",
+                    duration,
+                    venue=str(venue),
+                    requested=len(ids),
+                    returned=returned,
+                    budget_s=budget_s,
+                )
+            checked_mono = self._clock.monotonic()
+            checked_wall = self._clock.wall()
             await self._sync_backpressure()
             if self._backpressure:
                 self.store.invalidate(None, RECORDING_BACKPRESSURE)
-            self._apply_book_freshness(accepted_mono, accepted_wall)
-            await self._sync_maintenance(accepted_wall)
+            self._apply_book_freshness(checked_mono, checked_wall)
+            await self._sync_maintenance(checked_wall)
             batch_touched = self._groups_for_ids(
                 ((Venue.KALSHI, kalshi_ids), (Venue.POLYMARKET_US, poly_ids))
             )
@@ -573,6 +615,7 @@ class Collector:
         self._check_disk()
         alarm = "disk_low" if self._disk_low else None
         self._emit(None, HEALTH, self._health_detail(alarm=alarm))
+        self._loop_lag_max_s = 0.0
 
     def _accept_book(self, book: Book, now_mono: float, now_wall: datetime) -> None:
         self._enqueue_raw(_envelope(book, now_mono, now_wall))
@@ -594,44 +637,166 @@ class Collector:
                 self.store.generation(book.venue),
             )
 
-    async def _fetch(self, adapter: VenueAdapter, ids: Sequence[str]) -> list[Book]:
+    def fetch_budget_s(self, batch: Sequence[ScheduledGroup]) -> float:
+        """Time one venue's fetch of ``batch`` may take, retries included.
+
+        The batch's own cadence is ``max(min cadence, n_poly / polyus rps)``,
+        which also covers the books bucket's pacing of its Polymarket US calls.
+        The budget is ``poll_fetch_budget_fraction`` of that cadence's freshness
+        window, capped at ``poll_fetch_budget_max_s``.
+        """
+        settings = self._settings
+        n_poly = len(market_ids(batch, Venue.POLYMARKET_US))
+        cadence = max(settings.min_poll_cadence_s, n_poly / settings.polyus_books_rps)
+        window = max_age_for(
+            "poll",
+            cadence,
+            stream_max_age_s=settings.stream_max_age_s,
+            poll_multiple=settings.poll_max_age_cadence_multiple,
+        )
+        return min(settings.poll_fetch_budget_fraction * window, settings.poll_fetch_budget_max_s)
+
+    async def _fetch(
+        self, adapter: VenueAdapter, ids: Sequence[str], budget_s: float
+    ) -> list[Book]:
         if not ids:
             return []
+        started = self._clock.monotonic()
+        deadline = Deadline(started + budget_s, self._clock.monotonic)
         try:
-            books = await adapter.get_books(list(ids))
+            # The task copies this context, so every request it makes sees the deadline.
+            with request_deadline(deadline, budget_s=budget_s):
+                task = asyncio.ensure_future(adapter.get_books(list(ids)))
+            books = await self._within(task, budget_s, adapter.venue, len(ids))
         except asyncio.CancelledError:
             raise
+        except PartialBooksError as exc:
+            self._record_adapter_error(adapter.venue, exc, ids, started, budget_s)
+            books = exc.books
         except Exception as exc:  # noqa: BLE001 - any adapter failure invalidates that venue
-            self._record_adapter_error(adapter.venue, exc)
+            self._record_adapter_error(adapter.venue, exc, ids, started, budget_s)
             return []
-        if not isinstance(books, list):
-            self._record_adapter_error(adapter.venue, TypeError("get_books must return a list"))
-            return []
+        else:
+            if not isinstance(books, list):
+                self._record_adapter_error(
+                    adapter.venue, TypeError("get_books must return a list"), ids, started, budget_s
+                )
+                return []
+            self._record_success(adapter.venue)
         return books
 
-    async def _timed_fetch(
-        self, adapter: VenueAdapter, ids: Sequence[str]
-    ) -> tuple[list[Book], float]:
-        started = self._clock.monotonic()
-        books = await self._fetch(adapter, ids)
-        return books, max(0.0, self._clock.monotonic() - started)
+    async def _within(
+        self, task: asyncio.Future[list[Book]], budget_s: float, venue: Venue, requested: int
+    ) -> list[Book]:
+        """Await ``task``; cancel it if it outlives the budget (on the collector clock)."""
+        timer = asyncio.ensure_future(self._clock.sleep(budget_s + FETCH_BACKSTOP_GRACE_S))
+        try:
+            await asyncio.wait({task, timer}, return_when=asyncio.FIRST_COMPLETED)
+        except asyncio.CancelledError:
+            task.cancel()
+            timer.cancel()
+            await asyncio.gather(task, timer, return_exceptions=True)
+            raise
+        if task.done():
+            timer.cancel()
+            await asyncio.gather(timer, return_exceptions=True)
+            return task.result()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        raise FetchBudgetExceededError(venue, budget_s, requested)
 
-    def _record_adapter_error(self, venue: Venue, exc: Exception) -> None:
+    async def _timed_fetch(
+        self, adapter: VenueAdapter, ids: Sequence[str], budget_s: float
+    ) -> tuple[int, float]:
+        """Fetch, then accept the books at once, stamped when this venue's fetch returned."""
+        started = self._clock.monotonic()
+        books = await self._fetch(adapter, ids, budget_s)
+        accepted_mono = self._clock.monotonic()
+        accepted_wall = self._clock.wall()
+        for book in books:
+            self._accept_book(book, accepted_mono, accepted_wall)
+        return len(books), max(0.0, accepted_mono - started)
+
+    def _record_adapter_error(
+        self,
+        venue: Venue,
+        exc: Exception,
+        requested: Sequence[str] = (),
+        started_mono: float | None = None,
+        budget_s: float | None = None,
+    ) -> None:
+        """Count, invalidate, log, and record one failed venue fetch.
+
+        Only the markets that failed are invalidated: books that did arrive (a
+        partial result) and other batches' books stay as they are.
+        """
         self.error_count += 1
-        status = getattr(exc, "status_code", None)
-        if status == 429 or "HTTP 429" in str(exc):
+        if isinstance(exc, PartialBooksError):
+            errors: list[BaseException] = exc.errors or [exc]
+            failed_ids = list(exc.failures)
+        else:
+            errors = [exc]
+            failed_ids = list(requested)
+        primary = errors[0]
+        causes: dict[str, int] = {}
+        for err in errors:
+            cause = failure_cause(err)
+            causes[cause] = causes.get(cause, 0) + 1
+        totals = self.poll_failures.setdefault(str(venue), {})
+        for cause, count in causes.items():
+            totals[cause] = totals.get(cause, 0) + count
+        if "http_429" in causes or any("HTTP 429" in str(err) for err in errors):
             self.http_429_count += 1
-        self.store.invalidate_venue(venue, ADAPTER_ERROR)
-        _log.warning("book poll failed for %s: %s", venue, type(exc).__name__)
-        self._emit(
-            str(venue),
-            ADAPTER_ERROR,
+        if failed_ids:
+            for market_id in failed_ids:
+                self.store.invalidate(market_key(venue, market_id), ADAPTER_ERROR)
+        else:
+            self.store.invalidate_venue(venue, ADAPTER_ERROR)
+
+        elapsed = None if started_mono is None else self._clock.monotonic() - started_mono
+        detail = failure_detail(primary)
+        detail.update(
             {
-                "error_type": type(exc).__name__,
-                "error": str(exc)[:500],
-                "status_code": status if isinstance(status, int) else None,
-            },
+                "causes": causes,
+                "requested": len(requested),
+                "failed": len(failed_ids),
+                "fetch_elapsed_s": None if elapsed is None else round(elapsed, 4),
+                "fetch_budget_s": budget_s,
+            }
         )
+        if isinstance(exc, PartialBooksError):
+            detail["partial"] = True
+            detail["summary"] = str(exc)[:500]
+        key = str(venue)
+        streak = self._failure_streak.get(key, 0) + 1
+        self._failure_streak[key] = streak
+        label = ",".join(sorted(causes))
+        changed = self._streak_cause.get(key) != label
+        self._streak_cause[key] = label
+        detail["streak"] = streak
+        loud = streak == 1 or changed or streak % ERROR_LOG_REPEAT_EVERY == 0
+        _log.log(
+            logging.WARNING if loud else logging.DEBUG,
+            "book poll failed for %s [cause=%s failed=%d/%d streak=%d elapsed=%s budget=%s]: %s: %s",
+            venue,
+            label,
+            len(failed_ids),
+            len(requested),
+            streak,
+            "?" if elapsed is None else f"{elapsed:.2f}s",
+            "?" if budget_s is None else f"{budget_s:.2f}s",
+            type(primary).__name__,
+            primary,
+        )
+        self._emit(key, ADAPTER_ERROR, detail)
+
+    def _record_success(self, venue: Venue) -> None:
+        key = str(venue)
+        streak = self._failure_streak.pop(key, 0)
+        last = self._streak_cause.pop(key, None)
+        if streak:
+            _log.info("book poll recovered for %s after %d failed polls (%s)", venue, streak, last)
+            self._emit(key, ADAPTER_RECOVERED, {"failed_polls": streak, "last_causes": last})
 
     def _apply_book_freshness(self, now_mono: float, now_wall: datetime) -> set[str]:
         changed: set[str] = set()
@@ -743,12 +908,33 @@ class Collector:
             "last_book_age_s": self._last_book_age(self._clock.wall()),
             "error_count": self.error_count,
             "http_429_count": self.http_429_count,
+            "poll_failures_by_cause": {
+                venue: dict(causes) for venue, causes in sorted(self.poll_failures.items())
+            },
+            "poll_failure_streak": dict(self._failure_streak),
+            "http": self._http_metrics(),
+            "loop_lag_max_s": round(self._loop_lag_max_s, 4),
             "disk_free_bytes": self._disk_free_bytes,
             "raw_logging": self._raw_logging,
             "backpressure": self._backpressure,
             "cadence_s": self.cadence_s,
             "alarm": alarm,
         }
+
+    def _http_metrics(self) -> dict[str, Any]:
+        """Per-bucket request counters from the adapters' HTTP clients, if they expose them."""
+        out: dict[str, Any] = {}
+        seen: set[int] = set()
+        for adapter in (self._kalshi, self._polyus):
+            http = getattr(adapter, "http", None)
+            metrics = getattr(http, "metrics", None)
+            if http is None or id(http) in seen or not callable(metrics):
+                continue
+            seen.add(id(http))
+            snapshot = metrics()
+            if isinstance(snapshot, dict):
+                out.update(snapshot)
+        return out
 
     def _last_book_age(self, now_wall: datetime) -> dict[str, float | None]:
         newest: dict[str, datetime] = {}

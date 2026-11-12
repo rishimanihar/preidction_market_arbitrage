@@ -20,6 +20,7 @@ from pmarb.collector.episodes import EpisodeTracker
 from pmarb.collector.persist import Op
 from pmarb.collector.registry import Registry
 from pmarb.collector.review_mode import ReviewMode, market_closed
+from pmarb.http import failure_cause, failure_detail
 from pmarb.matching.candidates import generate_candidates
 from pmarb.matching.rules import rules_hash
 from pmarb.models import EquivalenceGroup, GroupStatus, Market, Venue
@@ -116,12 +117,14 @@ class Discovery:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - a venue outage must not stop discovery
-            _log.warning("discovery failed for %s: %s", adapter.venue, type(exc).__name__)
-            self._emit(
-                str(adapter.venue),
-                "discovery_error",
-                {"error_type": type(exc).__name__, "error": str(exc)[:500]},
+            _log.warning(
+                "discovery failed for %s [cause=%s]: %s: %s",
+                adapter.venue,
+                failure_cause(exc),
+                type(exc).__name__,
+                exc,
             )
+            self._emit(str(adapter.venue), "discovery_error", failure_detail(exc))
             listing = _Listing(adapter.venue, None, ())
         else:
             listing = _Listing(adapter.venue, {market.market_id for market in found}, tuple(found))
