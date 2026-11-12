@@ -13,6 +13,8 @@ DEPLOY = ROOT / "deploy"
 RENDERER = DEPLOY / "render_template.py"
 INSTALLER = DEPLOY / "install.sh"
 ENV_EXAMPLE = ROOT / ".env.example"
+# install.sh is the macOS/Linux installer; deploy/windows/install.ps1 is tested in test_windows.py.
+posix_installer = pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell installer")
 
 
 def test_env_example_has_no_inline_assignment_comments() -> None:
@@ -82,6 +84,7 @@ def test_systemd_template_quotes_paths_and_contains_hardening(tmp_path: Path) ->
     assert "KALSHI_API_KEY_ID" not in content
 
 
+@posix_installer
 @pytest.mark.parametrize(
     ("system", "service_suffix"),
     [
@@ -147,6 +150,7 @@ def test_renderer_rejects_newlines_to_prevent_directive_injection(tmp_path: Path
     assert not (tmp_path / "unit").exists()
 
 
+@posix_installer
 def test_linux_install_uses_systemd_user_unit_dir_and_preserves_env(tmp_path: Path) -> None:
     home = tmp_path / "home"
     repo = tmp_path / "repo"
@@ -220,6 +224,7 @@ def test_linux_install_uses_systemd_user_unit_dir_and_preserves_env(tmp_path: Pa
     assert "disable --now pmarb-collector.service" in call_log.read_text(encoding="utf-8")
 
 
+@posix_installer
 def test_install_script_is_shellcheck_clean_when_available() -> None:
     shellcheck = shutil.which("shellcheck")
     if shellcheck is None:

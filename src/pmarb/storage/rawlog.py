@@ -27,6 +27,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from pmarb.osutil import fsync_directory
+
 KINDS = frozenset({"rest_book", "ws_msg", "market", "conn", "checkpoint", "gamestate"})
 DEFAULT_MAX_BYTES = 20 * 1024**3
 DEFAULT_MAX_AGE_DAYS = 30
@@ -117,11 +119,8 @@ def _encode_member(env: Envelope) -> bytes:
 
 
 def _fsync_dir(path: Path) -> None:
-    fd = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+    # Skipped on Windows, where directories cannot be fsynced; see fsync_directory.
+    fsync_directory(path)
 
 
 def _hour_of(path: Path) -> datetime | None:

@@ -67,12 +67,13 @@ def test_scan_once_help_explains_fresh_sample_fallback(
     assert "soonest samples" in capsys.readouterr().out
 
 
-def _make_database(data_dir: Path, version: int = 1) -> None:
+def _make_database(data_dir: Path, version: int | None = None) -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
     (data_dir / "logs").mkdir(exist_ok=True)
     db_path = data_dir / "pmarb.sqlite"
     with closing(open_writer(db_path)) as conn:
-        conn.execute("UPDATE schema_version SET version = ?", (version,))
+        if version is not None:
+            conn.execute("UPDATE schema_version SET version = ?", (version,))
 
 
 def _doctor_offline(settings: Settings, repo_root: Path | None) -> list[str]:
@@ -154,7 +155,7 @@ def test_doctor_rejects_wrong_schema(tmp_path: Path) -> None:
     repo_root.mkdir()
     _make_database(data_dir, version=9)
     assert any(
-        "schema version must be 1" in e
+        f"schema version must be {cli.EXPECTED_SCHEMA_VERSION}" in e
         for e in _doctor_offline(Settings(data_dir=data_dir), repo_root)
     )
 
@@ -167,7 +168,8 @@ def test_doctor_rejects_missing_or_extra_schema_rows(tmp_path: Path, rows: list[
         conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
         conn.executemany("INSERT INTO schema_version VALUES (?)", [(row,) for row in rows])
     errors = _doctor_offline(Settings(data_dir=data_dir), tmp_path / "repo")
-    assert any("schema version must be 1" in error for error in errors)
+    expected = f"schema version must be {cli.EXPECTED_SCHEMA_VERSION}"
+    assert any(expected in error for error in errors)
 
 
 @pytest.mark.parametrize("ddl", [None, "CREATE TABLE schema_version (wrong_column INTEGER)"])
@@ -373,3 +375,14 @@ def test_review_passes_explicit_env_file_to_child(
     monkeypatch.setattr(cli.subprocess, "run", fake_run)
     assert cli._run_review(8501, env_file) == 0
     assert called["env"]["PMARB_ENV_FILE"] == str(env_file)
+
+
+def test_doctor_accepts_a_freshly_initialized_database(tmp_path: Path) -> None:
+    data_dir = tmp_path / "outside" / "data"
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (data_dir / "logs").mkdir(parents=True)
+    open_writer(data_dir / "pmarb.sqlite").close()
+    errors = _doctor_offline(Settings(data_dir=data_dir), repo_root)
+    assert not any("schema" in error for error in errors)
+    assert cli.EXPECTED_SCHEMA_VERSION >= 2

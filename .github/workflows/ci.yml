@@ -28,3 +28,48 @@ jobs:
           pip install -e '.[dev]'
           ruff check src tests
           pytest -q -m "not localdata"
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: install
+        run: pip install -e '.[dev]'
+      - name: lint
+        run: ruff check src tests
+      - name: test
+        run: pytest -q -m "not localdata"
+      - name: Windows PowerShell 5.1 parses the deploy scripts
+        shell: powershell
+        run: |
+          $failed = $false
+          foreach ($script in Get-ChildItem deploy\windows\*.ps1) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($script.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            foreach ($e in $errors) {
+              Write-Host "$($script.Name):$($e.Extent.StartLineNumber): $($e.Message)"
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+      - name: install.ps1 dry run, install without starting, stop, uninstall
+        shell: powershell
+        run: |
+          py -3.12 --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          powershell -NoProfile -ExecutionPolicy RemoteSigned -File deploy\windows\install.ps1 -DryRun
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          powershell -NoProfile -ExecutionPolicy RemoteSigned -File deploy\windows\install.ps1
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $task = Get-ScheduledTask -TaskName pmarb-collector
+          Write-Host "state=$($task.State) limit=$($task.Settings.ExecutionTimeLimit) restart=$($task.Settings.RestartInterval) dir=$($task.Actions[0].WorkingDirectory)"
+          if ($task.Settings.ExecutionTimeLimit -ne 'PT0S' -or $task.Settings.RestartInterval -ne 'PT1M') { exit 1 }
+          icacls "$env:USERPROFILE\.config\pmarb\.env"
+          powershell -NoProfile -ExecutionPolicy RemoteSigned -File deploy\windows\stop.ps1
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          powershell -NoProfile -ExecutionPolicy RemoteSigned -File deploy\windows\install.ps1 -Uninstall
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if (Get-ScheduledTask -TaskName pmarb-collector -ErrorAction SilentlyContinue) { exit 1 }

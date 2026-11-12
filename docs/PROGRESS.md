@@ -2,7 +2,7 @@
 
 This is the build's living status: what's done, what we've learned that isn't in the plan yet, and what comes next. **Update it at every milestone step.** Read it alongside `docs/IMPLEMENTATION_PLAN.md` (what we're building) and `docs/research/` (why).
 
-_Last updated: 2026-11-12 14:08 CST_
+_Last updated: 2026-11-12 14:40 CST_
 
 ## Status (2026-11-12 13:30 CST)
 
@@ -49,6 +49,7 @@ _Last updated: 2026-11-12 14:08 CST_
    - Fix in progress on `m1/livefix`.
 8. **Polymarket US `comboEnabled` means "usable as a combo leg".** Excluding it found 0 live markets (D29, fixed).
 9. **Scenario fees (D30) are needed while nobody has accounts.** Without them every assessment is `fee_unknown`, so no episode can open.
+10. **`pmarb doctor` rejected every fresh database.** Its schema check was pinned to version 1, but migration 0002 (game state) makes a fresh database version 2. The check now derives the expected version from the packaged migrations (fixed on `m1/windows`).
 
 ## Engineering conventions learned the hard way
 
@@ -62,7 +63,17 @@ _Last updated: 2026-11-12 14:08 CST_
 ## Next steps (start of next session)
 
 1. **Investigate `RetriesExhaustedError`.** The first Mac soak (about 13:55–14:07, stopped cleanly for the day) logged 8 book-poll failures for both venues. It is unclear whether this was a network blip, rate limiting, or a bug in the retry or timeout path. Check `data/soak-2026-11-12/collector.out`, the health events, and the HTTP error counts before the next run.
-2. **Windows support** (`m1/windows`, Grok xhigh, paused mid-task at 14:08). The worktree `/Users/avynarra/Documents/pmarb-worktrees/windows` holds partial uncommitted work. The brief is `/Users/avynarra/Documents/pmarb-worktrees/briefs/windows.md`. Resume by re-running it (tell the worker to review the existing changes first), then review, push, and confirm the Windows CI job passes.
+2. **Windows support** (`m1/windows`, stacked on `m1/integration`, PR open against `main`). It adds:
+   - `tzdata`;
+   - Windows signal handling and `pmarb stop` (a stop-request file);
+   - `icacls` checks for key and settings files;
+   - a skip of directory fsync on Windows;
+   - a `w32tm` clock check;
+   - `deploy/windows/` (Task Scheduler);
+   - the AI-followable runbook `docs/RUN_ON_WINDOWS.md`;
+   - a `windows-latest` CI job that also smoke-tests `install.ps1`.
+
+   Next: confirm Windows CI is green, then do a first real-PC run by following the runbook.
 3. **Start the real soak.** Run `pmarb scan` across an evening slate. Short term: this Mac with `caffeinate -is`. Long term: Rishi's Windows desktop, via `docs/RUN_ON_WINDOWS.md` once it lands. Then run `pmarb report`.
 4. **Open the integration PR** (`m1/integration` → `main`) once Rishi has reviewed the stacked PRs, or let him merge the stack in order.
 5. **M2:** wire the streams into the collector. Change `depth_unconfirmed` to valid + non-atomic. This needs API keys.

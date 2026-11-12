@@ -2,7 +2,8 @@
 
 The database file is ``<data_dir>/pmarb.sqlite``. Startup closes episodes left
 open by the previous process with ``collector_restart`` before the writer
-thread opens the file.
+thread opens the file. ``pmarb stop`` asks the collector to shut down through
+``<data_dir>/collector.stop`` (see :mod:`pmarb.collector.stopfile`).
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from pmarb.collector.persist import WriteSink
 from pmarb.collector.registry import Registry, read_human_rejects, read_registry
 from pmarb.collector.review_mode import ReviewMode
 from pmarb.collector.runtime import Collector
+from pmarb.collector.stopfile import stop_request_path
 from pmarb.config import Settings
 from pmarb.http import ObservationHttpClient
 from pmarb.protocols import VenueAdapter
@@ -132,6 +134,7 @@ def build_collector(
         discovery=discovery,
         on_startup=startup,
         on_stopped=close_http,
+        stop_file=stop_request_path(data_dir),
     )
     holder.append(collector)
     discovery.bind(collector)
