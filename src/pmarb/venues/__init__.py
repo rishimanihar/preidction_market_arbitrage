@@ -1,1 +1,1 @@
-"""Venue integrations and authentication helpers."""
+"""Venue-specific read adapters."""
