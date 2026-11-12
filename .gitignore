@@ -1,0 +1,50 @@
+.venv/
+__pycache__/
+*.egg-info/
+.env
+data/
+*.sqlite*
+.pytest_cache/
+.ruff_cache/
+
+# --- Secrets: never commit (see SECURITY.md) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*_ed25519*
+*_rsa*
+id_*
+secrets/
+credentials*
+*.secret*
+
+# --- Runtime / recorded market data (venue terms may restrict sharing) ---
+data/
+!src/pmarb/matching/data/
+recordings/
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+*.jsonl
+*.jsonl.gz
+*.ndjson*
+*.log
+logs/
+
+# --- Tooling ---
+.mypy_cache/
+.coverage
+htmlcov/
+.DS_Store
+.idea/
+.vscode/
+
+# --- Local agent worktrees and tool state ---
+.claude/
