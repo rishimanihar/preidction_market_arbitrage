@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.pmarb.collector</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string>
+    <string>PMARB_DATA_DIR=@DATA_DIR@</string>
+    <string>PMARB_LOG_DIR=@LOG_DIR@</string>
+    <string>@PYTHON_BIN@</string>
+    <string>-m</string>
+    <string>pmarb.service</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>@REPO_DIR@</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PMARB_ENV_FILE</key>
+    <string>@ENV_FILE@</string>
+  </dict>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+  <key>ExitTimeOut</key>
+  <integer>60</integer>
+  <key>StandardOutPath</key>
+  <string>@LOG_DIR@/collector.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>@LOG_DIR@/collector.stderr.log</string>
+</dict>
+</plist>
+<!-- To prevent sleep during a soak, run `caffeinate -s` in a separate terminal.
+     Alternatively, review `pmset` sleep settings for this machine. -->

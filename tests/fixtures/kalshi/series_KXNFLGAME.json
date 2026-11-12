@@ -1,0 +1,32 @@
+{
+  "series": {
+    "ticker": "KXNFLGAME",
+    "title": "Synthetic Football Game Winner",
+    "category": "Sports",
+    "categories": [
+      "Sports"
+    ],
+    "tags": [
+      "Football"
+    ],
+    "frequency": "custom",
+    "contract_url": "https://example.com/synthetic/KXNFLGAME-contract.pdf",
+    "contract_terms_url": "https://example.com/synthetic/KXNFLGAME-terms.pdf",
+    "settlement_sources": [
+      {
+        "name": "Synthetic Scores",
+        "url": "https://example.com/synthetic-scores"
+      }
+    ],
+    "additional_prohibitions": [
+      "Synthetic prohibition text for fixture purposes only."
+    ],
+    "product_metadata": {
+      "scope": "Game"
+    },
+    "fee_type": "quadratic_with_maker_fees",
+    "fee_multiplier": 1,
+    "exchange_index": 1,
+    "last_updated_ts": "2030-01-01T00:00:00Z"
+  }
+}

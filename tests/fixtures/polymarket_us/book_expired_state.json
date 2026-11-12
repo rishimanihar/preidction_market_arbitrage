@@ -1,0 +1,43 @@
+{
+  "marketData": {
+    "marketSlug": "aec-nfl-hhh-iii-2030-01-06",
+    "bids": [],
+    "offers": [],
+    "state": "MARKET_STATE_EXPIRED",
+    "stats": {
+      "lastTradePx": {
+        "value": "0.4600",
+        "currency": "USD"
+      },
+      "currentPx": {
+        "value": "0.4550",
+        "currency": "USD"
+      },
+      "lastTradeQty": "2.0000",
+      "sharesTraded": "1000.0000",
+      "openInterest": "500.0000",
+      "notionalTraded": {
+        "value": "460.0000",
+        "currency": "USD"
+      },
+      "settlementPriceCalculationMethod": "SETTLEMENT_PRICE_CALCULATION_METHOD_EVENT_TIER_2",
+      "lastTradeSetTime": "2030-01-05T23:59:59.987654321Z",
+      "lastPriceSample": {
+        "longPx": {
+          "value": "0.4600",
+          "currency": "USD"
+        },
+        "shortPx": {
+          "value": "0.540",
+          "currency": "USD"
+        },
+        "ts": "2030-01-05T23:59:59.987654321Z"
+      },
+      "settlementPx": {
+        "value": "1.0000",
+        "currency": "USD"
+      }
+    },
+    "transactTime": "2030-01-06T04:00:00.000000000Z"
+  }
+}
