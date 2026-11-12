@@ -24,6 +24,7 @@ from pmarb.venues.kalshi.parse import SERIES_LEAGUES, is_eligible, parse_book, p
 BASE_URL = "https://external-api.kalshi.com/trade-api/v2"
 SERIES_TICKERS = tuple(SERIES_LEAGUES)
 PAGE_SIZE = 1000
+EVENT_PAGE_SIZE = 200
 BOOK_BATCH_SIZE = 100
 
 
@@ -51,6 +52,7 @@ class KalshiAdapter:
         self._settings = settings
         self._series_cache: dict[str, dict[str, Any]] = {}
         self._event_cache: dict[str, dict[str, Any]] = {}
+        self.discovery_pages = 0
 
     async def _get_json(
         self,
@@ -88,6 +90,44 @@ class KalshiAdapter:
         self._event_cache[ticker] = event
         return event
 
+    async def _event_pages(self, series_ticker: str) -> AsyncIterator[dict[str, Any]]:
+        """List event metadata for a configured series without nested markets.
+
+        The Events endpoint supports a series filter and a maximum page size of
+        200; see https://docs.kalshi.com/api-reference/events/get-events.md.
+        """
+        cursor: str | None = None
+        while True:
+            params: dict[str, Any] = {
+                "series_ticker": series_ticker,
+                "status": "open",
+                "limit": EVENT_PAGE_SIZE,
+                "with_nested_markets": "false",
+            }
+            if cursor:
+                params["cursor"] = cursor
+            payload, _ = await self._get_json("/events", purpose="discovery", params=params)
+            self.discovery_pages += 1
+            if not isinstance(payload, dict) or not isinstance(payload.get("events"), list):
+                raise TypeError("Kalshi events response has no events list")
+            for event in payload["events"]:
+                if not isinstance(event, dict):
+                    raise TypeError("Kalshi events response contains a non-object event")
+                ticker = event.get("event_ticker")
+                event_series = event.get("series_ticker")
+                if not isinstance(ticker, str) or not ticker:
+                    raise TypeError("Kalshi event metadata has no event_ticker")
+                if not isinstance(event_series, str) or event_series != series_ticker:
+                    raise ValueError("Kalshi event metadata series_ticker does not match request")
+                self._event_cache[ticker] = event
+                yield event
+            next_cursor = payload.get("cursor")
+            if next_cursor is None or next_cursor == "":
+                break
+            if not isinstance(next_cursor, str):
+                raise TypeError("Kalshi event pagination cursor must be a string, null, or empty")
+            cursor = next_cursor
+
     async def _pages(self, series_ticker: str) -> AsyncIterator[dict[str, Any]]:
         cursor: str | None = None
         while True:
@@ -99,6 +139,7 @@ class KalshiAdapter:
             if cursor:
                 params["cursor"] = cursor
             payload, _ = await self._get_json("/markets", purpose="discovery", params=params)
+            self.discovery_pages += 1
             if not isinstance(payload, dict) or not isinstance(payload.get("markets"), list):
                 raise TypeError("Kalshi markets response has no markets list")
             for row in payload["markets"]:
@@ -118,13 +159,20 @@ class KalshiAdapter:
         start, end = _utc(horizon_start), _utc(horizon_end)
         if end < start:
             raise ValueError("horizon_end must not precede horizon_start")
+        self._event_cache.clear()
         for series_ticker in self.series_tickers:
             series = await self._series(series_ticker)
+            async for _event in self._event_pages(series_ticker):
+                pass
             async for raw in self._pages(series_ticker):
                 if not is_eligible(raw, series)[0]:
                     continue
                 event_ticker = raw.get("event_ticker")
-                event = await self._event(event_ticker) if event_ticker else None
+                event = None
+                if isinstance(event_ticker, str) and event_ticker:
+                    event = self._event_cache.get(event_ticker)
+                    if event is None:
+                        event = await self._event(event_ticker)
                 market = parse_market(raw, series, event)
                 # The event occurrence is preferred. The parser leaves the expected
                 # expiration hint in raw when no occurrence is available.

@@ -72,6 +72,7 @@ class Discovery:
         self._emit = emit if emit is not None else (lambda _venue, _kind, _detail: None)
         self._stopping = stopping if stopping is not None else (lambda: False)
         self._misses: dict[str, int] = {}
+        self._hash_seconds = 0.0
 
     def bind(self, collector: object) -> None:
         """Publish into the collector and record events on it."""
@@ -99,8 +100,15 @@ class Discovery:
             await self._collect(adapter, start, end) for adapter in (self._kalshi, self._polyus)
         ]
         self._commit(listings, start, end)
+        self._emit(None, "timing", {"phase": "rules_hash", "duration_s": self._hash_seconds})
+        self._hash_seconds = 0.0
 
     async def _collect(self, adapter: VenueAdapter, start: datetime, end: datetime) -> _Listing:
+        started = self._clock.monotonic()
+        metrics = getattr(getattr(adapter, "http", None), "request_metrics", None)
+        http_venue = "polyus" if adapter.venue is Venue.POLYMARKET_US else str(adapter.venue)
+        before = metrics(http_venue, "discovery") if callable(metrics) else {}
+        pages_before = getattr(adapter, "discovery_pages", 0)
         found: list[Market] = []
         try:
             async for market in adapter.list_markets(start, end):
@@ -114,8 +122,25 @@ class Discovery:
                 "discovery_error",
                 {"error_type": type(exc).__name__, "error": str(exc)[:500]},
             )
-            return _Listing(adapter.venue, None, ())
-        return _Listing(adapter.venue, {market.market_id for market in found}, tuple(found))
+            listing = _Listing(adapter.venue, None, ())
+        else:
+            listing = _Listing(adapter.venue, {market.market_id for market in found}, tuple(found))
+        after = metrics(http_venue, "discovery") if callable(metrics) else {}
+        requests = after.get("requests", 0) - before.get("requests", 0)
+        attempts = after.get("attempts", 0) - before.get("attempts", 0)
+        self._emit(
+            str(adapter.venue),
+            "timing",
+            {
+                "phase": "discovery_venue",
+                "duration_s": max(0.0, self._clock.monotonic() - started),
+                "markets": len(listing.markets),
+                "requests": requests,
+                "retries": max(0, attempts - requests),
+                "pages": max(0, getattr(adapter, "discovery_pages", 0) - pages_before),
+            },
+        )
+        return listing
 
     def _commit(self, listings: list[_Listing], start: datetime, end: datetime) -> None:
         def run() -> None:
@@ -167,7 +192,9 @@ class Discovery:
     def _ingest(self, market: Market) -> Market | None:
         now = self._clock.wall()
         try:
+            hash_started = self._clock.monotonic()
             stored = market.model_copy(update={"rules_hash": rules_hash(market)})
+            self._hash_seconds += max(0.0, self._clock.monotonic() - hash_started)
         except (TypeError, ValueError) as exc:
             self._emit(
                 str(market.venue),

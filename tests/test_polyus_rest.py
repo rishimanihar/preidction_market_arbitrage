@@ -8,7 +8,10 @@ from pathlib import Path
 import httpx
 import pytest
 
+from pmarb.collector.clock import FakeClock
+from pmarb.collector.discovery import Discovery
 from pmarb.http import ObservationHttpClient, TokenBucket
+from pmarb.models import Venue
 from pmarb.venues.polymarket_us.rest import PAGE_SIZE, PolymarketUSAdapter
 
 FIXTURES = Path(__file__).parent / "fixtures" / "polymarket_us"
@@ -68,13 +71,14 @@ def test_league_and_event_pagination_and_horizon_filter():
                     now - timedelta(hours=12), now + timedelta(days=2)
                 )
             ]
-            return result
+            return result, adapter.discovery_pages
 
-    result = asyncio.run(run())
+    result, page_count = asyncio.run(run())
     assert len(result) == 2
     assert result[0].event_start_utc == datetime(2030, 1, 4, 13, tzinfo=UTC)
     assert result[0].league == "nfl"
     assert result[1].event_start_utc == datetime(2030, 1, 6, tzinfo=UTC)
+    assert page_count == 4
     assert [(r.url.path, r.url.params.get("offset")) for r in requests] == [
         ("/v2/leagues", "0"),
         ("/v2/leagues", str(PAGE_SIZE)),
@@ -83,6 +87,50 @@ def test_league_and_event_pagination_and_horizon_filter():
     ]
     assert all(r.method == "GET" for r in requests)
     assert all(int(r.url.params["limit"]) <= 50 for r in requests)
+
+
+def test_discovery_timing_counts_real_polyus_http_requests():
+    events = []
+    clock = FakeClock(wall=datetime(2030, 1, 5, tzinfo=UTC))
+
+    async def handler(request):
+        if request.url.path == "/v2/leagues":
+            return _json_response({"leagues": []})
+        raise AssertionError(request.url)
+
+    async def run():
+        async with _client(handler) as http:
+            adapter = PolymarketUSAdapter(http, clock_utc=clock.wall)
+            discovery = Discovery(
+                kalshi=object(),
+                polyus=adapter,
+                registry=object(),
+                review=object(),
+                clock=clock,
+                interval_s=lambda: 1.0,
+                enqueue=lambda _op: None,
+                episodes=object(),
+                emit=lambda venue, kind, detail: events.append((venue, kind, detail)),
+            )
+            listing = await discovery._collect(
+                adapter,
+                clock.wall() - timedelta(days=1),
+                clock.wall() + timedelta(days=1),
+            )
+            assert listing.ids == set()
+            assert adapter.http.request_metrics("polyus", "discovery")["requests"] == 1
+
+    asyncio.run(run())
+    timing = next(
+        detail
+        for venue, kind, detail in events
+        if venue == str(Venue.POLYMARKET_US)
+        and kind == "timing"
+        and detail.get("phase") == "discovery_venue"
+    )
+    assert timing["requests"] == 1
+    assert timing["pages"] == 1
+    assert timing["markets"] == 0
 
 
 def test_get_books_concurrent_and_keep_raw_body():

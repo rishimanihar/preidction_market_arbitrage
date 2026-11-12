@@ -9,6 +9,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
@@ -274,7 +275,38 @@ def _scan(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     collector = build_collector(settings)
     try:
         if args.once:
+            started = time.monotonic()
             asyncio.run(collector.run_once())
+            phases = []
+            for event in collector.events:
+                if event.kind != "timing":
+                    continue
+                phase = dict(event.detail)
+                if event.venue is not None:
+                    phase.setdefault("venue", event.venue)
+                phases.append(phase)
+            fields = [f"total={time.monotonic() - started:.3f}s"]
+            for phase in phases:
+                name = str(phase.get("phase", "unknown"))
+                values = [f"{name}={float(phase.get('duration_s', 0.0)):.3f}s"]
+                for key in (
+                    "venue",
+                    "requests",
+                    "retries",
+                    "pages",
+                    "markets",
+                    "requested",
+                    "returned",
+                    "groups",
+                    "batches",
+                    "ops",
+                    "flushes",
+                    "bytes",
+                ):
+                    if key in phase:
+                        values.append(f"{key}={phase[key]}")
+                fields.append(",".join(values))
+            print("TIMING " + " ".join(fields))
         else:
             asyncio.run(collector.run())
     except KeyboardInterrupt:
@@ -295,7 +327,7 @@ def main(argv: list[str] | None = None) -> None:
     scan.add_argument(
         "--once",
         action="store_true",
-        help="run one discovery pass and one poll, then exit",
+        help="discover, drain writes, fetch fresh hot groups (or soonest samples), evaluate, and exit",
     )
     scan.add_argument("--max-groups", type=int, default=None)
     scan.add_argument("--review-mode", choices=("auto", "manual"), default=None)

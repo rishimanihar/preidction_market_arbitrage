@@ -118,7 +118,7 @@ def limits_for(settings: Settings, states: Sequence[BookState], cadence_s: float
 
 
 class Evaluator:
-    """``on_books_updated`` hook. Discovery samples are ignored and open no episodes."""
+    """Evaluate every fresh book update; discovery samples never open episodes."""
 
     def __init__(
         self,
@@ -133,6 +133,7 @@ class Evaluator:
         clock: Clock,
         opens_episodes: Callable[[str], bool] | None = None,
         cadence_s: Callable[[], float] | None = None,
+        record_event: Callable[[str, dict[str, object]], None] | None = None,
     ) -> None:
         self._registry = registry
         self._store = store
@@ -144,6 +145,9 @@ class Evaluator:
         self._clock = clock
         self._opens = opens_episodes if opens_episodes is not None else (lambda _group_id: True)
         self._cadence = cadence_s if cadence_s is not None else (lambda: 1.0)
+        self._record_event = (
+            record_event if record_event is not None else (lambda _kind, _detail: None)
+        )
         self._written: dict[tuple[object, ...], AssessmentSnapshot] = {}
 
     def bind(self, collector: object) -> None:
@@ -154,6 +158,9 @@ class Evaluator:
             raise TypeError("collector must provide opens_episodes and cadence_s")
         self._opens = opens
         self._cadence = lambda: collector.cadence_s  # type: ignore[attr-defined]
+        record = getattr(collector, "record_event", None)
+        if callable(record):
+            self._record_event = lambda kind, detail: record(None, kind, detail)
 
     async def on_books_updated(self, group_ids: set[str]) -> None:
         for group_id in sorted(group_ids):
@@ -161,23 +168,49 @@ class Evaluator:
         self._episodes.flush()
 
     def _evaluate(self, group_id: str) -> None:
-        if not self._opens(group_id):
-            return
         group = self._registry.groups.get(group_id)
         if group is None or group.status is not GroupStatus.APPROVED:
             return
         loaded = self._books(group)
         if loaded is None:
-            self._episodes.mark_unassessed(group_id, self._clock.wall(), self._cadence())
+            if self._opens(group_id):
+                self._episodes.mark_unassessed(group_id, self._clock.wall(), self._cadence())
             return
         states, books = loaded
         cadence = self._cadence()
-        atomic = books_are_atomic(states, self._settings.skew_qualified_s)
+        if states and all(state.meta.discovery_sample for state in states):
+            cadence = self._settings.sample_interval_s
         limits = limits_for(self._settings, states, cadence)
-        fee_models = self._fee_models(group)
-        auto = bool(group.reviewer) and group.reviewer.startswith("auto:")
+        max_age = float(limits.max_book_age_s)
         now_mono = self._clock.monotonic()
         now_wall = self._clock.wall()
+        mono_ages = [now_mono - state.book.received_monotonic for state in states]
+        wall_ages = [(now_wall - state.book.received_utc).total_seconds() for state in states]
+        if any(
+            state.invalid_reason is not None
+            or not state.book.valid
+            or mono_age < 0
+            or mono_age > max_age
+            or wall_age < 0
+            or wall_age > max_age
+            for state, mono_age, wall_age in zip(states, mono_ages, wall_ages, strict=True)
+        ):
+            self._record_event(
+                "evaluation_error",
+                {
+                    "group_id": group_id,
+                    "reason": "books_not_fresh",
+                    "max_age_s": max_age,
+                    "book_ages_monotonic_s": mono_ages,
+                    "book_ages_wall_s": wall_ages,
+                },
+            )
+            if self._opens(group_id):
+                self._episodes.mark_unassessed(group_id, now_wall, cadence)
+            return
+        atomic = books_are_atomic(states, self._settings.skew_qualified_s)
+        fee_models = self._fee_models(group)
+        auto = bool(group.reviewer) and group.reviewer.startswith("auto:")
         for qty in SIZE_VIEWS:
             priced = assess_group(
                 group,
@@ -194,7 +227,8 @@ class Evaluator:
                 if auto or _scenario_fee(assessment):
                     assessment = downgrade_auto_qualified(assessment)
                 self._persist(assessment)
-                self._episodes.observe(assessment, opens_episode=True)
+                if self._opens(group_id):
+                    self._episodes.observe(assessment, opens_episode=True)
 
     def _books(self, group: EquivalenceGroup) -> tuple[list[BookState], dict[str, Book]] | None:
         states: list[BookState] = []

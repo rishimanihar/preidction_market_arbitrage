@@ -902,6 +902,9 @@ class DbWriterTask:
         self.checkpoint_interval_s = checkpoint_interval_s
         self.failed_ops = 0
         self.checkpoint_count = 0
+        self.write_seconds = 0.0
+        self.write_batches = 0
+        self.write_ops = 0
         self.ready = asyncio.Event()
         self._pending: list[object] = []
         self._next_commit = 0.0
@@ -912,6 +915,8 @@ class DbWriterTask:
         self._jobs: thread_queue.Queue[Callable[[], None] | None] = thread_queue.Queue()
         self._thread: threading.Thread | None = None
         self._did_shutdown = False
+        self._flush_requested = asyncio.Event()
+        self._runner: asyncio.Task[None] | None = None
 
     @property
     def queue_depth(self) -> int:
@@ -962,7 +967,11 @@ class DbWriterTask:
         await self._submit(fn)
 
     def _apply(self, conn: sqlite3.Connection, ops: Sequence[object]) -> None:
+        started = time.monotonic()
         self.failed_ops += _apply_batch(conn, ops)
+        self.write_seconds += time.monotonic() - started
+        self.write_batches += 1
+        self.write_ops += len(ops)
 
     def _do_checkpoint(self, conn: sqlite3.Connection) -> None:
         try:
@@ -986,12 +995,25 @@ class DbWriterTask:
         timeout = min(self._next_commit, self._next_checkpoint) - time.monotonic()
         if timeout <= 0:
             return
+        get_task = asyncio.create_task(self.queue.get())
+        flush_task = asyncio.create_task(self._flush_requested.wait())
         try:
-            op = await asyncio.wait_for(self.queue.get(), timeout)
-        except TimeoutError:
-            return
-        self._pending.append(op)
-        self._take_available()
+            done, _pending = await asyncio.wait(
+                {get_task, flush_task}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
+            )
+            if get_task in done:
+                self._pending.append(get_task.result())
+                self._take_available()
+        except asyncio.CancelledError:
+            if get_task.done() and not get_task.cancelled():
+                self._pending.append(get_task.result())
+                self._take_available()
+            raise
+        finally:
+            for task in (get_task, flush_task):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(get_task, flush_task, return_exceptions=True)
 
     async def _loop(self) -> None:
         now = time.monotonic()
@@ -1002,11 +1024,18 @@ class DbWriterTask:
             now = time.monotonic()
             full = len(self._pending) >= self.batch_size
             due = now >= self._next_commit
-            if self._pending and (full or due):
+            flush_requested = self._flush_requested.is_set()
+            if self._pending and (full or due or flush_requested):
                 ops = self._pending
                 self._pending = []
                 await self._exec(lambda conn, ops=ops: self._apply(conn, ops))
+                for _ in ops:
+                    self.queue.task_done()
+                if flush_requested:
+                    self._flush_requested.clear()
                 self._next_commit = time.monotonic() + self.commit_interval_s
+            elif flush_requested:
+                self._flush_requested.clear()
             elif due:
                 self._next_commit = now + self.commit_interval_s
             if time.monotonic() >= self._next_checkpoint:
@@ -1057,11 +1086,14 @@ class DbWriterTask:
                 ops.extend(_drain_queue(self.queue))
                 if ops:
                     self._run_on_worker(lambda conn: self._apply(conn, ops))
+                    for _ in ops:
+                        self.queue.task_done()
         finally:
             self._stop_thread()
 
     async def run(self) -> None:
         """Open the database on the worker thread and write until cancelled."""
+        self._runner = asyncio.current_task()
         self._thread = threading.Thread(
             target=self._worker,
             name="pmarb-db-writer",
@@ -1087,3 +1119,27 @@ class DbWriterTask:
             except Exception:  # noqa: BLE001 - the original error must stay the task result
                 _log.exception("db writer shutdown failed")
             raise
+
+    async def drain(self) -> None:
+        """Force pending writes through commit and wait for earlier queue entries."""
+        runner = self._runner
+        if runner is None:
+            await asyncio.sleep(0)
+            runner = self._runner
+        if runner is None or runner.done():
+            raise RuntimeError("database writer is not running")
+        self._flush_requested.set()
+        joined = asyncio.create_task(self.queue.join())
+        try:
+            done, _pending = await asyncio.wait(
+                {joined, runner}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if joined in done:
+                await joined
+                return
+            error = runner.exception()
+            raise RuntimeError("database writer stopped before draining its queue") from error
+        finally:
+            if not joined.done():
+                joined.cancel()
+                await asyncio.gather(joined, return_exceptions=True)

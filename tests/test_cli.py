@@ -58,6 +58,15 @@ def test_replay_is_not_implemented(capsys: pytest.CaptureFixture[str]) -> None:
     assert capsys.readouterr().out.strip() == "not implemented yet (phase 2)"
 
 
+def test_scan_once_help_explains_fresh_sample_fallback(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as raised:
+        cli.main(["scan", "--once", "--help"])
+    assert raised.value.code == 0
+    assert "soonest samples" in capsys.readouterr().out
+
+
 def _make_database(data_dir: Path, version: int = 1) -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
     db_path = data_dir / "pmarb.sqlite"

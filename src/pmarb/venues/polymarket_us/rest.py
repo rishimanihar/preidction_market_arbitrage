@@ -51,6 +51,7 @@ class PolymarketUSAdapter:
         self._monotonic = monotonic
         self.connection_generation = connection_generation
         self._settings = settings
+        self.discovery_pages = 0
 
     async def _get_json(
         self, path: str, *, purpose: str, params: dict[str, Any] | None = None
@@ -68,6 +69,8 @@ class PolymarketUSAdapter:
             payload = await self._get_json(
                 path, purpose=purpose, params={"limit": PAGE_SIZE, "offset": offset}
             )
+            if purpose == "discovery":
+                self.discovery_pages += 1
             if not isinstance(payload, dict) or collection not in payload:
                 raise ValueError(f"Polymarket US response is missing {collection!r}")
             rows = payload[collection]
