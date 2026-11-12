@@ -2,6 +2,7 @@
 
 import json
 import os
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ import pytest
 
 from pmarb.matching.rules import member_market_key, rules_hash
 from pmarb.models import EquivalenceGroup, GroupMember, GroupStatus, Market, Side, Venue
+from pmarb.osutil import portable_filename
 from pmarb.review import ReviewDecision, ReviewLogEntry, apply_pending, persist_sync, write_decision
 from pmarb.storage.db import open_writer
 
@@ -132,8 +134,9 @@ def test_write_decision_is_atomic(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr(os, "fsync", spy)
     path = write_decision(tmp_path, _bare_decision())
-    assert len(calls) >= 2
-    assert path.name == "2026-11-11T18:00:00Z-g1-approve.json"
+    # File fsync everywhere; POSIX also fsyncs the directory (skipped on Windows).
+    assert len(calls) >= (1 if sys.platform == "win32" else 2)
+    assert path.name == portable_filename("2026-11-11T18:00:00Z-g1-approve.json")
     assert [item.name for item in tmp_path.iterdir()] == [path.name]
     loaded = json.loads(path.read_text(encoding="utf-8"))
     assert loaded["action"] == "approve"

@@ -38,10 +38,13 @@ import inspect
 import logging
 import signal
 import sqlite3
+import threading
+import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import FrameType
 from typing import Any, Protocol
 from urllib.parse import quote
 
@@ -61,6 +64,7 @@ from pmarb.collector.supervisor import RestartBackoff, supervise
 from pmarb.config import Settings
 from pmarb.http import Backoff, Deadline, failure_cause, failure_detail, request_deadline
 from pmarb.models import Book, EquivalenceGroup, GroupStatus, Market, Venue
+from pmarb.osutil import is_windows
 from pmarb.protocols import PartialBooksError, VenueAdapter
 from pmarb.storage.db import DbWriterTask, Write, insert_collector_event
 from pmarb.storage.rawlog import Envelope, RawLogTask, disk_free_bytes
@@ -90,6 +94,12 @@ ADAPTER_RECOVERED = "adapter_recovered"
 COLLECTOR_SHUTDOWN = "collector_shutdown"
 LOOP_CRASH = "loop_crash"
 HEALTH = "health"
+STOP_REQUESTED = "stop_requested"
+STOP_REQUEST_STALE = "stop_request_stale"
+STOP_REQUEST_INTERVAL_S = 1.0
+# A request written this soon before the collector was created still counts.
+# It covers coarse file timestamps (FAT keeps 2 s) and `pmarb stop` racing a start.
+STOP_REQUEST_GRACE_S = 2.0
 
 # Process-wide invalidations. A later freshness pass must not relabel them.
 _PROCESS_REASONS = frozenset({CLOCK_JUMP, RECORDING_BACKPRESSURE, GENERATION, ADAPTER_ERROR})
@@ -98,6 +108,9 @@ BooksHook = Callable[[set[str]], Awaitable[None] | None]
 GapHook = Callable[[str], Awaitable[None] | None]
 StartupHook = Callable[[], Awaitable[None] | None]
 _SIGNALS = (signal.SIGINT, signal.SIGTERM)
+# Windows has no loop.add_signal_handler. Console Ctrl+C is SIGINT and
+# Ctrl+Break is SIGBREAK, which exists only in the Windows signal module.
+_WIN32_SIGNAL_NAMES = ("SIGINT", "SIGBREAK")
 
 
 def _once_sample_key(start: datetime | None, now: datetime) -> tuple[int, float]:
@@ -150,6 +163,14 @@ class Collector:
     Adapters, clock, writers, and the evaluator hooks are injected. ``stop``
     cancels the pollers, calls ``on_gap("collector_shutdown")``, then cancels
     the raw-log and database tasks so they drain and fsync.
+
+    Three things trigger ``stop`` from outside:
+
+    - SIGINT or SIGTERM through ``loop.add_signal_handler`` on POSIX;
+    - SIGINT or SIGBREAK through ``signal.signal`` on Windows, which hands the
+      stop to the loop with ``call_soon_threadsafe``;
+    - a fresh ``stop_file`` (see :mod:`pmarb.collector.stopfile`), checked once
+      a second on every platform.
     """
 
     def __init__(
@@ -177,7 +198,11 @@ class Collector:
         discovery: DiscoveryLoop | None = None,
         on_startup: StartupHook | None = None,
         on_stopped: StartupHook | None = None,
+        stop_file: Path | None = None,
+        stop_poll_interval_s: float = STOP_REQUEST_INTERVAL_S,
     ) -> None:
+        if stop_poll_interval_s <= 0:
+            raise ValueError("stop_poll_interval_s must be > 0")
         if queue_limit < 0:
             raise ValueError("queue_limit must be >= 0")
         if raw_task is not None:
@@ -219,6 +244,12 @@ class Collector:
         self._discovery = discovery
         self._on_startup = on_startup
         self._on_stopped = on_stopped
+        self._stop_file = stop_file
+        self._stop_poll_interval_s = stop_poll_interval_s
+        # Real wall time, because file mtimes are real. A request older than
+        # this collector was left behind by an earlier run and is stale.
+        self._created_epoch = time.time()
+        self._stop_file_seen = False
         self._groups: tuple[EquivalenceGroup, ...] = ()
         self._markets: tuple[Market, ...] = ()
         self.set_universe(groups, markets)
@@ -253,7 +284,9 @@ class Collector:
         self._stop_lock: asyncio.Lock | None = None
         self._stopped: asyncio.Event | None = None
         self._signals: list[signal.Signals] = []
+        self._previous_handlers: dict[int, Any] = {}
         self._signal_task: asyncio.Task[None] | None = None
+        self._stop_file_task: asyncio.Task[None] | None = None
         self._poll_task: asyncio.Task[None] | None = None
         self._fresh_task: asyncio.Task[None] | None = None
         self._health_task: asyncio.Task[None] | None = None
@@ -373,6 +406,9 @@ class Collector:
                         if self._on_stopped is not None:
                             await _call(self._on_stopped)
                     finally:
+                        # The writers have drained; deleting the request tells
+                        # `pmarb stop --wait` that shutdown is complete.
+                        self._acknowledge_stop_request()
                         self._stopped.set()
 
     async def _run_startup(self) -> None:
@@ -431,6 +467,11 @@ class Collector:
                 supervise("discovery", self._discovery.run, **common),
                 name="collector-discovery",
             )
+        if self._stop_file is not None:
+            self._stop_file_task = asyncio.create_task(
+                supervise("stop_request", self._stop_request_loop, **common),
+                name="collector-stop-request",
+            )
 
     async def _run_db(self) -> None:
         assert self._db_task is not None
@@ -485,6 +526,47 @@ class Collector:
             if self._stopping:
                 return
             self._health_tick()
+
+    async def _stop_request_loop(self) -> None:
+        """Check the stop-request file now and then once per interval."""
+        while not self._stopping:
+            if self._check_stop_request():
+                return
+            await self._clock.sleep(self._stop_poll_interval_s)
+
+    def _check_stop_request(self) -> bool:
+        """Start a clean stop for a fresh request. Delete a stale one."""
+        path = self._stop_file
+        if path is None:
+            return False
+        try:
+            mtime = path.stat().st_mtime
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            _log.warning("could not check stop request %s: %s", path, type(exc).__name__)
+            return False
+        if mtime < self._created_epoch - STOP_REQUEST_GRACE_S:
+            _log.warning("ignoring stale stop request %s from before this collector started", path)
+            self._emit(None, STOP_REQUEST_STALE, {"path": str(path)})
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                _log.warning("could not remove stale stop request: %s", type(exc).__name__)
+            return False
+        _log.info("stop requested through %s", path)
+        self._stop_file_seen = True
+        self._emit(None, STOP_REQUESTED, {"source": "stop_file"})
+        self._signal_stop()
+        return True
+
+    def _acknowledge_stop_request(self) -> None:
+        if not self._stop_file_seen or self._stop_file is None:
+            return
+        try:
+            self._stop_file.unlink(missing_ok=True)
+        except OSError as exc:
+            _log.warning("could not remove stop request after shutdown: %s", type(exc).__name__)
 
     async def _poll_once(self, *, once: bool = False) -> None:
         if self._stopping:
@@ -1045,6 +1127,7 @@ class Collector:
                 self._fresh_task,
                 self._health_task,
                 self._discovery_task,
+                self._stop_file_task,
             )
             if task is not None
         ]
@@ -1074,6 +1157,9 @@ class Collector:
         if not self._install_signals_flag:
             return
         loop = asyncio.get_running_loop()
+        if is_windows():
+            self._install_win32_signals(loop)
+            return
         for sig in _SIGNALS:
             try:
                 loop.add_signal_handler(sig, self._signal_stop)
@@ -1081,8 +1167,46 @@ class Collector:
                 return
             self._signals.append(sig)
 
+    def _install_win32_signals(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Install ``signal.signal`` handlers that hand the stop to ``loop``.
+
+        Python runs signal handlers in the main thread between bytecodes, so
+        the handler only schedules :meth:`_signal_stop` with
+        ``call_soon_threadsafe``, which also wakes a loop that is blocked in
+        ``select``. The handlers this replaces are restored on exit.
+        """
+        if threading.current_thread() is not threading.main_thread():
+            return  # signal.signal only works in the main thread
+
+        def handler(signum: int, frame: FrameType | None) -> None:
+            del frame
+            try:
+                loop.call_soon_threadsafe(self._signal_stop)
+            except RuntimeError:  # the loop already closed
+                return
+
+        for name in _WIN32_SIGNAL_NAMES:
+            sig = getattr(signal, name, None)
+            if sig is None:
+                continue
+            try:
+                previous = signal.signal(sig, handler)
+            except (OSError, RuntimeError, ValueError):
+                continue
+            self._previous_handlers[int(sig)] = previous
+            self._signals.append(sig)
+
     def _remove_signals(self) -> None:
         if not self._signals:
+            return
+        if self._previous_handlers:
+            for sig in self._signals:
+                previous = self._previous_handlers.pop(int(sig), None)
+                try:
+                    signal.signal(sig, previous if previous is not None else signal.SIG_DFL)
+                except (OSError, RuntimeError, ValueError):
+                    _log.warning("could not restore the handler for signal %s", int(sig))
+            self._signals.clear()
             return
         loop = asyncio.get_running_loop()
         for sig in self._signals:

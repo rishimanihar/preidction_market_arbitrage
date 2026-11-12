@@ -10,6 +10,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from pmarb.osutil import fsync_directory, portable_filename
+
 _ACTIONS = {"approve", "reject", "revoke", "mark_exception_risk"}
 _DECISION_KEYS = {
     "group_id",
@@ -104,7 +106,8 @@ def write_decision(data_dir: str | Path, decision: dict[str, Any]) -> Path:
         raise ValueError("invalid decision group_id filename component")
     spool = Path(data_dir) / "spool" / "reviews"
     spool.mkdir(parents=True, exist_ok=True)
-    destination = spool / f"{stamp}-{group_id}-{action}.json"
+    # Windows forbids ":" in file names; the payload keeps the exact timestamp.
+    destination = spool / portable_filename(f"{stamp}-{group_id}-{action}.json")
     payload = json.dumps(
         decision, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
     )
@@ -115,11 +118,8 @@ def write_decision(data_dir: str | Path, decision: dict[str, Any]) -> Path:
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temp_name, destination)
-        dir_fd = os.open(spool, os.O_RDONLY)
-        try:
-            os.fsync(dir_fd)
-        finally:
-            os.close(dir_fd)
+        # The directory fsync is skipped on Windows; the file itself was fsynced above.
+        fsync_directory(spool)
     except BaseException:
         try:
             os.unlink(temp_name)

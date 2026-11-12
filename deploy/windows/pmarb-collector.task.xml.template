@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<!--
+  Task Scheduler definition for the pmarb collector (task name: pmarb-collector).
+  deploy\windows\install.ps1 fills the placeholders through deploy\render_template.py,
+  which XML-escapes every value, then registers the result.
+
+  - Starts one minute after this user logs on. It runs only while the user is
+    logged on (InteractiveToken), needs no stored password, and has no admin rights.
+  - ExecutionTimeLimit PT0S: no time limit.
+  - RestartOnFailure: if the task fails to launch, retry every minute.
+    run-collector.ps1 also restarts `pmarb scan` one minute after a crash,
+    because Task Scheduler does not treat a non-zero exit code as a failure.
+  - Stop it cleanly with deploy\windows\stop.ps1 (pmarb stop). "End task" kills
+    the process without draining.
+-->
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>pmarb read-only market data collector (pmarb scan). It places no orders. Stop it with deploy\windows\stop.ps1.</Description>
+    <URI>\pmarb-collector</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <UserId>@TASK_USER@</UserId>
+      <Delay>PT1M</Delay>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>@TASK_USER@</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+    <RestartOnFailure>
+      <Interval>PT1M</Interval>
+      <Count>999</Count>
+    </RestartOnFailure>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe</Command>
+      <Arguments>-NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -WindowStyle Hidden -File "@RUNNER_SCRIPT@" -RepoPath "@REPO_DIR@" -DataDir "@DATA_DIR@" -EnvFile "@ENV_FILE@"</Arguments>
+      <WorkingDirectory>@REPO_DIR@</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>

@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,9 @@ from pmarb.secrets import (
     check_key_file,
     load_private_key,
 )
+
+# POSIX permission bits do not exist on Windows; tests/test_windows.py covers the ACL checks.
+posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
 
 
 @pytest.fixture
@@ -33,6 +37,7 @@ def make_key(directory: Path, mode: int = 0o600) -> Path:
     return key
 
 
+@posix_only
 def test_valid_key_loads(repo: Path, outside: Path) -> None:
     key = make_key(outside)
     assert load_private_key(key, repo) == b"synthetic-key-bytes"
@@ -58,6 +63,7 @@ def test_symlink_into_repo_refused(repo: Path, outside: Path) -> None:
         check_key_file(link, repo)
 
 
+@posix_only
 @pytest.mark.parametrize("mode", [0o640, 0o604, 0o644, 0o660, 0o666])
 def test_loose_permissions(repo: Path, outside: Path, mode: int) -> None:
     key = make_key(outside, mode)
@@ -65,6 +71,7 @@ def test_loose_permissions(repo: Path, outside: Path, mode: int) -> None:
         check_key_file(key, repo)
 
 
+@posix_only
 def test_owner_only_variants_ok(repo: Path, outside: Path) -> None:
     check_key_file(make_key(outside, 0o400), repo)
 

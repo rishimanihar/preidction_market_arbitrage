@@ -28,7 +28,8 @@ def render(template: Path, output: Path, platform: str, values: dict[str, str]) 
     for key, value in values.items():
         if any(char in value for char in "\r\n\0"):
             raise ValueError("paths cannot contain line breaks or NUL bytes")
-        if platform == "macos":
+        if platform in {"macos", "windows"}:
+            # launchd plists and Task Scheduler definitions are both XML.
             replacements[key] = html.escape(value, quote=True)
         elif key == "REPO_DIR":
             # WorkingDirectory is parsed as a raw path by systemd, not as a
@@ -47,7 +48,10 @@ def render(template: Path, output: Path, platform: str, values: dict[str, str]) 
 
     content = re.sub(r"@([A-Z_]+)@", replace_placeholder, content)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(content, encoding="utf-8")
+    # A task definition declares encoding="UTF-16". Writing it with a BOM lets
+    # PowerShell 5 `Get-Content -Raw` read non-ASCII paths correctly.
+    encoding = "utf-16" if platform == "windows" else "utf-8"
+    output.write_text(content, encoding=encoding)
     output.chmod(0o600)
 
 
