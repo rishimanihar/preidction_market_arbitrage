@@ -2,7 +2,7 @@
 
 This is the build's living status: what's done, what we've learned that isn't in the plan yet, and what comes next. **Update it at every milestone step.** Read it alongside `docs/IMPLEMENTATION_PLAN.md` (what we're building) and `docs/research/` (why).
 
-_Last updated: 2026-11-12 13:30 CST_
+_Last updated: 2026-11-12 14:08 CST_
 
 ## Status (2026-11-12 13:30 CST)
 
@@ -61,17 +61,13 @@ _Last updated: 2026-11-12 13:30 CST_
 
 ## Next steps (start of next session)
 
-1. **PR-6b** (base: merge `m1/pr6a-poller` + `m1/pr1-economics` + `m1/pr5a-review` + `m1/pr5c-coverage`):
-   - evaluator hook calling `economics.assess_group` for every polled group;
-   - writes assessments through `DbWriterTask`;
-   - episode state machine (indicative vs qualified kept separate);
-   - review intake loop (`review.spool.apply_pending`) plus `review_mode="auto"` (D27);
-   - the DB file is `data/pmarb.sqlite` (the app expects this);
-   - replace the adapters' `fee_model()` stubs with `pmarb.fees` models (Kalshi multiplier from series; precision and Θ from config, unset → unknown).
-2. **Integration branch** `m1/integration`: merge every M1 branch, run the full suite, implement `pmarb scan`, then do a first live run against the public APIs (discover → auto-approve → poll a live game).
-3. **PR-8 soak:** 24 h unattended across an evening slate; report uptime, gaps, 429s, data volume, and indicative gap statistics (size vs skew).
-4. **M2 prep:** a Kalshi WS client using PR #11 signing (needs keys); a game-state recorder from Kalshi `/live_data` (D28).
-5. **Users:** venue accounts + read keys; Rishi turns on secret scanning and protects `main`.
+1. **Investigate `RetriesExhaustedError`.** The first Mac soak (about 13:55–14:07, stopped cleanly for the day) logged 8 book-poll failures for both venues. It is unclear whether this was a network blip, rate limiting, or a bug in the retry or timeout path. Check `data/soak-2026-11-12/collector.out`, the health events, and the HTTP error counts before the next run.
+2. **Windows support** (`m1/windows`, Grok xhigh, paused mid-task at 14:08). The worktree `/Users/avynarra/Documents/pmarb-worktrees/windows` holds partial uncommitted work. The brief is `/Users/avynarra/Documents/pmarb-worktrees/briefs/windows.md`. Resume by re-running it (tell the worker to review the existing changes first), then review, push, and confirm the Windows CI job passes.
+3. **Start the real soak.** Run `pmarb scan` across an evening slate. Short term: this Mac with `caffeinate -is`. Long term: Rishi's Windows desktop, via `docs/RUN_ON_WINDOWS.md` once it lands. Then run `pmarb report`.
+4. **Open the integration PR** (`m1/integration` → `main`) once Rishi has reviewed the stacked PRs, or let him merge the stack in order.
+5. **M2:** wire the streams into the collector. Change `depth_unconfirmed` to valid + non-atomic. This needs API keys.
+6. **Users:** create venue accounts and read keys. Rishi turns on secret scanning and protects `main`.
+7. **Codex is off for the rest of the week** (user request). Use Grok and Claude subagents only.
 
 ## Next steps (historical, before 2026-11-12)
 
