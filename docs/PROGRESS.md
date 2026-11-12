@@ -18,8 +18,9 @@ _Last updated: 2026-11-11 22:35 CST_
 | PR-2b crash-safe raw log | built, in review | agent worktree → PR-2 |
 | Kalshi fee-rounding algorithm (feeds PR-1) | built, in review | agent worktree |
 | Synthetic API fixtures, both venues (feeds PR-3/4) | built, in review | agent worktree |
+| PR-4 Polymarket US REST adapter | built; 175 total tests pass; ready for orchestrator review | branch `m1/pr4-polymarket-us` |
 | Team alias tables + resolver, 6 leagues (feeds PR-5b) | built, in review | agent worktree |
-| PR-1, PR-3 … PR-8 | not started | plan §10 |
+| PR-1, PR-3, PR-5 … PR-8 | not started | plan §10 |
 | Venue accounts + API keys (users) | not started; gates M2 | plan §10 "Your task" |
 
 ## Learned since plan v1.1
@@ -40,6 +41,7 @@ _Last updated: 2026-11-11 22:35 CST_
 4. **The Polymarket US order fee is a cap, not a single rounded sum.** Each fill is rounded half-even, and the cumulative charge is capped at `round_half_even(Σ exact)`, so the cap is a safe upper bound for assessments. _(in plan v1.1)_
 5. **Scripts cannot fetch the Kalshi fee schedule PDF** (Vercel bot check, 429). It was read in a browser: taker 0.07, maker 0.0175, effective 2026-07-07. Recheck the effective date periodically.
 6. **Team tables cover 100% of both venues' game listings in a one-week snapshot** (NFL, NBA and NHL complete; NCAA tables built from the same snapshot, so that 100% is not a held-out measure). Kalshi and Polymarket codes differ (`JAC`/`jax`, `GSW`/`gs`, `VGK`/`veg`). The resolver raises on ambiguous labels (`New York G/J`, bare `Los Angeles`, `Wildcats`) instead of guessing. New NCAA schools will show up as unresolved and need adding.
+7. **PR-4 keeps the adapter contract and raw JSON together.** `get_books()` returns `list[Book]`, with each complete venue response in `Book.raw_native` for the collector's raw log. Discovery honors the supplied inclusive horizon; the caller supplies the standard 12-hour lookback. The fee-model object remains a PR-1 integration dependency on this branch.
 
 ## Engineering conventions learned the hard way
 
