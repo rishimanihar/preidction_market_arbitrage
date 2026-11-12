@@ -9,6 +9,7 @@ description = "Local research toolkit for Kalshi and Polymarket US arbitrage."
 requires-python = ">=3.12"
 dependencies = [
     "pydantic==2.14.3",
+    "pydantic-settings==2.16.2",
     "httpx==0.28.1",
     "websockets==17.4",
     "cryptography==50.0.2",
@@ -30,6 +31,7 @@ packages = ["src/pmarb"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
