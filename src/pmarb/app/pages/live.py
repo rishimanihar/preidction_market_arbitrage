@@ -50,16 +50,16 @@ def render() -> None:
                         with st.expander(
                             f"{row.get('group_id', 'group')} · {row.get('class', class_name)} details"
                         ):
-                            st.write(
-                                f"YES market: {row.get('yes_title') or row.get('yes_market_key') or 'Unavailable'}"
+                            yes_title = (
+                                row.get("yes_title") or row.get("yes_market_key") or "Unavailable"
                             )
-                            st.write(
-                                f"NO market: {row.get('no_title') or row.get('no_market_key') or 'Unavailable'}"
+                            no_title = (
+                                row.get("no_title") or row.get("no_market_key") or "Unavailable"
                             )
-                            yes_url = row.get("yes_url")
-                            no_url = row.get("no_url")
-                            st.write(f"YES venue URL: {yes_url or 'Unavailable'}")
-                            st.write(f"NO venue URL: {no_url or 'Unavailable'}")
+                            st.text(f"YES market: {yes_title}")
+                            st.text(f"NO market: {no_title}")
+                            st.text(f"YES venue URL: {row.get('yes_url') or 'Unavailable'}")
+                            st.text(f"NO venue URL: {row.get('no_url') or 'Unavailable'}")
                             st.write("Full persisted evidence")
                             st.code(show_value(row), language="json")
                 if dust_rows:

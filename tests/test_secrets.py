@@ -1,3 +1,4 @@
+import hashlib
 import os
 import subprocess
 from pathlib import Path
@@ -112,3 +113,69 @@ def test_no_values_is_noop(repo: Path) -> None:
 def test_not_a_git_repo_skipped(repo: Path) -> None:
     (repo / "a.txt").write_text("abc-SECRET-123")
     assert_no_tracked_secrets(repo, ["abc-SECRET-123"])
+
+
+def test_load_uses_package_root_not_cwd(outside: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    key = make_key(outside)
+    monkeypatch.chdir(outside)
+    assert load_private_key(key) == b"synthetic-key-bytes"
+
+
+def test_symlink_is_not_followed(repo: Path, outside: Path) -> None:
+    real = make_key(outside)
+    link = outside / "alias.pem"
+    link.symlink_to(real)
+    with pytest.raises(SecretPolicyError, match="not a regular file"):
+        load_private_key(link, repo)
+
+
+def test_rejects_key_owned_by_someone_else(
+    repo: Path, outside: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    key = make_key(outside)
+    current = os.geteuid()
+    monkeypatch.setattr("pmarb.secrets.os.geteuid", lambda: current + 1)
+    with pytest.raises(SecretPolicyError, match="not owned"):
+        load_private_key(key, repo)
+
+
+def _private_key_mark() -> bytes:
+    return ("-----BEGIN" + " PRIVATE KEY-----").encode()
+
+
+def test_tracked_private_key_block_rejected(repo: Path) -> None:
+    git(repo, "init", "-q")
+    (repo / "notes.txt").write_bytes(b"header " + _private_key_mark() + b"\n")
+    git(repo, "add", ".")
+    with pytest.raises(SecretPolicyError, match="notes.txt") as info:
+        assert_no_tracked_secrets(repo, [], key_paths=[])
+    assert _private_key_mark().decode() not in str(info.value)
+
+
+def test_tracked_key_body_fingerprint_rejected(repo: Path, outside: Path) -> None:
+    body = b"synthetic-key-material-0123456789abcdef"
+    key = outside / "configured.pem"
+    key.write_bytes(body)
+    key.chmod(0o600)
+    git(repo, "init", "-q")
+    (repo / "leak.txt").write_bytes(b"prefix " + body + b" suffix\n")
+    git(repo, "add", ".")
+    with pytest.raises(SecretPolicyError, match="leak.txt") as info:
+        assert_no_tracked_secrets(repo, [], key_paths=[key])
+    message = str(info.value)
+    assert body.decode() not in message
+    assert hashlib.sha256(body).hexdigest() not in message
+
+
+def test_tracked_key_digest_rejected(repo: Path, outside: Path) -> None:
+    body = b"synthetic-key-material-fedcba9876543210"
+    key = outside / "configured.pem"
+    key.write_bytes(body)
+    key.chmod(0o600)
+    digest = hashlib.sha256(body).hexdigest()
+    git(repo, "init", "-q")
+    (repo / "hash.txt").write_text(digest + "\n")
+    git(repo, "add", ".")
+    with pytest.raises(SecretPolicyError, match="hash.txt") as info:
+        assert_no_tracked_secrets(repo, [], key_paths=[key])
+    assert digest not in str(info.value)

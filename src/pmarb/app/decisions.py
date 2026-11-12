@@ -1,14 +1,16 @@
-"""Atomic review decision spool writer; the review app never writes SQLite."""
+"""Review decision validation. The review app never writes SQLite.
+
+The bytes are written by ``pmarb.review.spool.write_decision``.
+"""
 
 from __future__ import annotations
 
-import json
-import os
 import re
-import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from pmarb.review.spool import write_decision as _spool_write_decision
 
 _ACTIONS = {"approve", "reject", "revoke", "mark_exception_risk"}
 _DECISION_KEYS = {
@@ -89,41 +91,12 @@ def build_decision(
 
 
 def write_decision(data_dir: str | Path, decision: dict[str, Any]) -> Path:
-    """Atomically spool one decision.
-
-    TODO: delegate to pmarb.review.spool.write_decision once PR-5a lands.
-    """
+    """Validate one decision and spool it. Does not open SQLite."""
     if not isinstance(decision, dict) or set(decision) != _DECISION_KEYS:
         raise ValueError("decision payload has an invalid schema")
     # Revalidate caller-created payloads before creating a file.
     decision = build_decision(**decision)
-    stamp = decision["created_utc"]
     group_id = decision["group_id"]
-    action = decision["action"]
     if not re.fullmatch(r"[A-Za-z0-9._-]+", group_id):
         raise ValueError("invalid decision group_id filename component")
-    spool = Path(data_dir) / "spool" / "reviews"
-    spool.mkdir(parents=True, exist_ok=True)
-    destination = spool / f"{stamp}-{group_id}-{action}.json"
-    payload = json.dumps(
-        decision, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
-    )
-    fd, temp_name = tempfile.mkstemp(prefix=".review-", suffix=".tmp", dir=spool)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temp_name, destination)
-        dir_fd = os.open(spool, os.O_RDONLY)
-        try:
-            os.fsync(dir_fd)
-        finally:
-            os.close(dir_fd)
-    except BaseException:
-        try:
-            os.unlink(temp_name)
-        except FileNotFoundError:
-            pass
-        raise
-    return destination
+    return _spool_write_decision(Path(data_dir) / "spool" / "reviews", decision)

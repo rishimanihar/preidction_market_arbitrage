@@ -4,7 +4,7 @@
 
 **As of:** 11 November 2026 (US Central); CFTC pages and live calls were retrieved 12 November 2026, 01:10–02:10 UTC.  
 **Question:** Which US-legal prediction-market or event-contract venues a US retail person can trade are real third order books, and which apps only display Kalshi (or another exchange already in the set)?  
-**Plan reviewed:** `/Users/avynarra/Documents/preidction_market_arbitrage/plan.md` (documentation date in the file: 11 November 2026).
+**Plan reviewed:** a local worktree `plan.md` (documentation date in the file: 11 November 2026).
 
 Status labels:
 

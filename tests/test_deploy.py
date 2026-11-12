@@ -41,7 +41,7 @@ def test_launchd_template_escapes_paths_and_keeps_secrets_out(tmp_path: Path) ->
         DATA_DIR="/tmp/data <private>",
         LOG_DIR="/tmp/data <private>/logs",
         PYTHON_BIN="/tmp/repo/.venv/bin/python",
-        ENV_FILE="/home/person/.config/pmarb/.env",
+        ENV_FILE="/tmp/pmarb-config.env",
     )
     assert "@" not in content
     assert "/tmp/repo &amp; &quot;one&quot;" in content
@@ -64,7 +64,7 @@ def test_systemd_template_quotes_paths_and_contains_hardening(tmp_path: Path) ->
         DATA_ENV="PMARB_DATA_DIR=/tmp/data\\folder%slot/$HOME/@OPAQUE@",
         LOG_ENV="PMARB_LOG_DIR=/tmp/data\\folder%slot/$HOME/@OPAQUE@/logs",
         PYTHON_BIN="/tmp/repo with spaces/.venv/bin/python",
-        ENV_FILE="/home/person/.config/pmarb/.env",
+        ENV_FILE="/tmp/pmarb-config.env",
     )
     assert 'WorkingDirectory=/tmp/repo with "quote"' in content
     assert '"PMARB_DATA_DIR=/tmp/data\\\\folder%%slot/$HOME/@OPAQUE@"' in content

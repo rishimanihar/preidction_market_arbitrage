@@ -45,6 +45,11 @@ def env(i: int = 0, *, venue: str = "kalshi", kind: str = "ws_msg", body=None) -
     )
 
 
+def test_venue_name_rejects_trailing_newline() -> None:
+    with pytest.raises(ValueError, match="unsafe venue"):
+        env(venue="kalshi\n")
+
+
 def write(w: RawLogWriter, n: int, **kw) -> None:
     for i in range(n):
         w.append(env(i, **kw))

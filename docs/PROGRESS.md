@@ -62,7 +62,7 @@ _Last updated: 2026-11-12 14:08 CST_
 ## Next steps (start of next session)
 
 1. **Investigate `RetriesExhaustedError`.** The first Mac soak (about 13:55–14:07, stopped cleanly for the day) logged 8 book-poll failures for both venues. It is unclear whether this was a network blip, rate limiting, or a bug in the retry or timeout path. Check `data/soak-2026-11-12/collector.out`, the health events, and the HTTP error counts before the next run.
-2. **Windows support** (`m1/windows`, Grok xhigh, paused mid-task at 14:08). The worktree `/Users/avynarra/Documents/pmarb-worktrees/windows` holds partial uncommitted work. The brief is `/Users/avynarra/Documents/pmarb-worktrees/briefs/windows.md`. Resume by re-running it (tell the worker to review the existing changes first), then review, push, and confirm the Windows CI job passes.
+2. **Windows support** (`m1/windows`, Grok xhigh, paused mid-task at 14:08). The worktree `../windows` holds partial uncommitted work. The brief is `../briefs/windows.md`. Resume by re-running it (tell the worker to review the existing changes first), then review, push, and confirm the Windows CI job passes.
 3. **Start the real soak.** Run `pmarb scan` across an evening slate. Short term: this Mac with `caffeinate -is`. Long term: Rishi's Windows desktop, via `docs/RUN_ON_WINDOWS.md` once it lands. Then run `pmarb report`.
 4. **Open the integration PR** (`m1/integration` → `main`) once Rishi has reviewed the stacked PRs, or let him merge the stack in order.
 5. **M2:** wire the streams into the collector. Change `depth_unconfirmed` to valid + non-atomic. This needs API keys.
