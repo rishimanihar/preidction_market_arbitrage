@@ -4,6 +4,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import sysconfig
 from contextlib import closing
 from importlib.metadata import version
 from pathlib import Path
@@ -37,7 +38,9 @@ def _mock_streamlit_import(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _script() -> Path:
-    return Path(sys.executable).with_name("pmarb")
+    # bin/pmarb in a POSIX environment, Scripts/pmarb.exe on Windows.
+    name = "pmarb.exe" if os.name == "nt" else "pmarb"
+    return Path(sysconfig.get_path("scripts")) / name
 
 
 def test_version() -> None:

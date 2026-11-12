@@ -84,8 +84,12 @@ if (-not (Test-Path -LiteralPath $pmarb)) {
 $started = Get-Date
 $env:PMARB_DATA_DIR = $DataDir
 $env:PMARB_ENV_FILE = $envFile
-& $pmarb stop --wait $TimeoutSeconds
-if ($LASTEXITCODE -ne 0) {
+# Merge stderr as text: Windows PowerShell 5.1 would turn it into fatal error records.
+$ErrorActionPreference = 'Continue'
+& $pmarb stop --wait $TimeoutSeconds 2>&1 | ForEach-Object { Write-Host "$_" }
+$stopCode = $LASTEXITCODE
+$ErrorActionPreference = 'Stop'
+if ($stopCode -ne 0) {
     Write-Warning "The collector did not confirm the stop within $TimeoutSeconds s. Check $DataDir\logs\pmarb.log. Only if it is stuck, end the task: Stop-ScheduledTask -TaskName $TaskName"
     exit 1
 }

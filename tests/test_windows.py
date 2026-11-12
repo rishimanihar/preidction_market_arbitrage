@@ -314,6 +314,8 @@ def test_pmarb_stop_shuts_down_scan_end_to_end(win32: None, tmp_path: Path, monk
     monkeypatch.setattr("pmarb.collector.factory.KalshiAdapter", FakeKalshi)
     monkeypatch.setattr("pmarb.collector.factory.PolymarketUSAdapter", FakePoly)
     monkeypatch.setattr("pmarb.collector.factory.ObservationHttpClient", _NoHttp)
+    # Raw logging pauses below 2 GiB free; a small CI disk must not change this test.
+    monkeypatch.setattr("pmarb.collector.runtime.disk_free_bytes", lambda _path: 10**12)
     monkeypatch.setenv("PMARB_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("PMARB_KALSHI_MEMBER_PRECISION", "0.0001")
     monkeypatch.setenv("PMARB_POLYUS_THETA", "0.075")
@@ -364,7 +366,7 @@ def test_pmarb_stop_shuts_down_scan_end_to_end(win32: None, tmp_path: Path, monk
     assert reasons and None not in reasons
     assert "collector_shutdown" in reasons
     raw_files = list_log_files(tmp_path, "kalshi")
-    assert raw_files
+    assert raw_files, (events, sorted(p.as_posix() for p in tmp_path.rglob("*")))
     assert list(iter_records(raw_files))  # drained and decodable
 
 

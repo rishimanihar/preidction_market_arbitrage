@@ -74,6 +74,31 @@ function Assert-NativeSuccess([string]$What) {
     }
 }
 
+# Windows PowerShell 5.1 turns a native program's stderr into error records when
+# output is captured (CI, an assistant's shell), and 'Stop' would make the first
+# pip notice or doctor WARN line fatal. These helpers merge stderr as plain text
+# and leave $LASTEXITCODE for the caller to check.
+function Invoke-Native([scriptblock]$Command) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $Command 2>&1 | ForEach-Object { Write-Host "$_" }
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
+function Get-NativeText([scriptblock]$Command) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $lines = @(& $Command 2>&1 | ForEach-Object { "$_" })
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+    return ($lines -join ' ').Trim()
+}
+
 function Resolve-FullPath([string]$Path) {
     $provider = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
     $full = [System.IO.Path]::GetFullPath($provider)
@@ -166,7 +191,7 @@ if ($null -eq (Get-Command git -ErrorAction SilentlyContinue)) {
 if ($null -eq (Get-Command py -ErrorAction SilentlyContinue)) {
     throw "The Python launcher 'py' was not found. Install Python 3.12 from python.org (keep 'py launcher' ticked) or: winget install -e --id Python.Python.3.12"
 }
-$pythonVersion = & py -3.12 --version
+$pythonVersion = Get-NativeText { & py -3.12 --version }
 if ($LASTEXITCODE -ne 0 -or "$pythonVersion" -notmatch '^Python 3\.12\.') {
     throw "py -3.12 did not find Python 3.12 (got: $pythonVersion). Install it: winget install -e --id Python.Python.3.12"
 }
@@ -174,14 +199,14 @@ Write-Host "OK $pythonVersion"
 
 # --- 2. Virtual environment ----------------------------------------------------
 if (Test-Path -LiteralPath $venvPython) {
-    $venvVersion = & $venvPython --version
+    $venvVersion = Get-NativeText { & $venvPython --version }
     if ("$venvVersion" -notmatch '^Python 3\.12\.') {
         throw "$venvDir uses $venvVersion, not Python 3.12. Rename or remove that folder yourself, then rerun."
     }
     Write-Host "OK existing virtual environment ($venvVersion)"
 } else {
     Invoke-Change "create the virtual environment $venvDir" {
-        & py -3.12 -m venv $venvDir
+        Invoke-Native { & py -3.12 -m venv $venvDir }
         Assert-NativeSuccess 'py -3.12 -m venv'
     }
 }
@@ -190,7 +215,7 @@ if (Test-Path -LiteralPath $venvPython) {
 Invoke-Change 'install the package: python -m pip install -e .[dev]' {
     Push-Location -LiteralPath $RepoPath
     try {
-        & $venvPython -m pip install -e '.[dev]'
+        Invoke-Native { & $venvPython -m pip install -e '.[dev]' }
         Assert-NativeSuccess 'pip install'
     } finally {
         Pop-Location
@@ -230,7 +255,7 @@ if (Test-Path -LiteralPath $envFile) {
 
 # --- 5. Restrict the settings file to this account ------------------------------
 Invoke-Change "restrict $envFile to $taskUser (icacls /inheritance:r /grant:r)" {
-    & icacls $envFile /inheritance:r /grant:r "*${userSid}:(F)"
+    Invoke-Native { & icacls $envFile /inheritance:r /grant:r "*${userSid}:(F)" }
     Assert-NativeSuccess 'icacls'
 }
 
@@ -239,7 +264,8 @@ Invoke-Change "create $DataDir and $logDir" {
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 }
 Invoke-Change "initialize the database schema in $DataDir" {
-    & $venvPython -c "import sys; from pathlib import Path; from pmarb.storage.db import open_writer; open_writer(Path(sys.argv[1]) / 'pmarb.sqlite').close()" $DataDir
+    $init = "import sys; from pathlib import Path; from pmarb.storage.db import open_writer; open_writer(Path(sys.argv[1]) / 'pmarb.sqlite').close()"
+    Invoke-Native { & $venvPython -c $init $DataDir }
     Assert-NativeSuccess 'database initialization'
 }
 
@@ -247,7 +273,7 @@ Invoke-Change "initialize the database schema in $DataDir" {
 Invoke-Change 'run pmarb doctor' {
     $env:PMARB_DATA_DIR = $DataDir
     $env:PMARB_ENV_FILE = $envFile
-    & $pmarb doctor
+    Invoke-Native { & $pmarb doctor }
     if ($LASTEXITCODE -ne 0) {
         throw 'pmarb doctor reported FAIL lines (above); the task was NOT registered. Fix them and rerun install.ps1.'
     }
@@ -255,9 +281,11 @@ Invoke-Change 'run pmarb doctor' {
 
 # --- 8. Task Scheduler ------------------------------------------------------------
 Invoke-Change "render the task definition to $renderedTask" {
-    & $venvPython $renderer windows $template $renderedTask `
-        "TASK_USER=$taskUser" "RUNNER_SCRIPT=$runner" "REPO_DIR=$RepoPath" `
-        "DATA_DIR=$DataDir" "ENV_FILE=$envFile"
+    Invoke-Native {
+        & $venvPython $renderer windows $template $renderedTask `
+            "TASK_USER=$taskUser" "RUNNER_SCRIPT=$runner" "REPO_DIR=$RepoPath" `
+            "DATA_DIR=$DataDir" "ENV_FILE=$envFile"
+    }
     Assert-NativeSuccess 'render_template.py'
 }
 Invoke-Change "register the scheduled task $TaskName (starts at logon, restarts after a failure)" {
