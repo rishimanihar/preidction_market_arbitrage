@@ -1,0 +1,33 @@
+canonical_id,league,display_name,city_or_school,nickname,kalshi_code,polymarket_code,aliases,source
+nhl:ANA,nhl,Anaheim Ducks,Anaheim,Ducks,ANA,ana,ANA,observed
+nhl:BOS,nhl,Boston Bruins,Boston,Bruins,BOS,bos,BOS,observed
+nhl:BUF,nhl,Buffalo Sabres,Buffalo,Sabres,BUF,buf,BUF,observed
+nhl:CAR,nhl,Carolina Hurricanes,Carolina,Hurricanes,CAR,car,CAR,observed
+nhl:CBJ,nhl,Columbus Blue Jackets,Columbus,Blue Jackets,CBJ,cbj,CBJ,observed
+nhl:CGY,nhl,Calgary Flames,Calgary,Flames,CGY,cgy,CGY,observed
+nhl:CHI,nhl,Chicago Blackhawks,Chicago,Blackhawks,CHI,chi,CHI,observed
+nhl:COL,nhl,Colorado Avalanche,Colorado,Avalanche,COL,col,COL,observed
+nhl:DAL,nhl,Dallas Stars,Dallas,Stars,DAL,dal,DAL,observed
+nhl:DET,nhl,Detroit Red Wings,Detroit,Red Wings,DET,det,DET,observed
+nhl:EDM,nhl,Edmonton Oilers,Edmonton,Oilers,EDM,edm,EDM,observed
+nhl:FLA,nhl,Florida Panthers,Florida,Panthers,FLA,fla,FLA,observed
+nhl:LAK,nhl,Los Angeles Kings,Los Angeles,Kings,LA,la,LA Kings|LAK,observed
+nhl:MIN,nhl,Minnesota Wild,Minnesota,Wild,MIN,min,MIN,observed
+nhl:MTL,nhl,Montreal Canadiens,Montreal,Canadiens,MTL,mon,Montréal|MTL,observed
+nhl:NJD,nhl,New Jersey Devils,New Jersey,Devils,NJ,nj,NJD,observed
+nhl:NSH,nhl,Nashville Predators,Nashville,Predators,NSH,nas,NSH,observed
+nhl:NYI,nhl,New York Islanders,New York,Islanders,NYI,nyi,NY Islanders|New York I|NYI,observed
+nhl:NYR,nhl,New York Rangers,New York,Rangers,NYR,nyr,NY Rangers|New York R|NYR,observed
+nhl:OTT,nhl,Ottawa Senators,Ottawa,Senators,OTT,ott,OTT,observed
+nhl:PHI,nhl,Philadelphia Flyers,Philadelphia,Flyers,PHI,phi,PHI,observed
+nhl:PIT,nhl,Pittsburgh Penguins,Pittsburgh,Penguins,PIT,pit,PIT,observed
+nhl:SEA,nhl,Seattle Kraken,Seattle,Kraken,SEA,sea,SEA,observed
+nhl:SJS,nhl,San Jose Sharks,San Jose,Sharks,SJ,sj,SJS,observed
+nhl:STL,nhl,St. Louis Blues,St. Louis,Blues,STL,stl,STL,observed
+nhl:TBL,nhl,Tampa Bay Lightning,Tampa Bay,Lightning,TB,tb,Tampa|TBL,observed
+nhl:TOR,nhl,Toronto Maple Leafs,Toronto,Maple Leafs,TOR,tor,TOR,observed
+nhl:UTA,nhl,Utah Mammoth,Utah,Mammoth,UTA,uta,Utah Hockey Club|UTA,observed
+nhl:VAN,nhl,Vancouver Canucks,Vancouver,Canucks,VAN,van,VAN,observed
+nhl:VGK,nhl,Vegas Golden Knights,Vegas,Golden Knights,VGK,veg,VGK,observed
+nhl:WPG,nhl,Winnipeg Jets,Winnipeg,Jets,WPG,wpg,WPG,observed
+nhl:WSH,nhl,Washington Capitals,Washington,Capitals,WSH,was,WSH,observed
