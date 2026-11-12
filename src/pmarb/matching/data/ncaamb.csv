@@ -1,0 +1,436 @@
+canonical_id,league,display_name,city_or_school,nickname,kalshi_code,polymarket_code,aliases,source
+ncaamb:AAMU,ncaamb,Alabama A&M,Alabama A&M,Bulldogs,AAMU,alaam,AAMU,observed
+ncaamb:AC,ncaamb,Abilene Christian,Abilene Christian,Wildcats,AC,abchr,ACU,observed
+ncaamb:AFA,ncaamb,Air Force,Air Force,Falcons,AFA,airf,AFA,observed
+ncaamb:AKR,ncaamb,Akron,Akron,Zips,AKR,akron,AKR,observed
+ncaamb:ALA,ncaamb,Alabama,Alabama,Crimson Tide,ALA,ala,BAMA,observed
+ncaamb:ALBY,ncaamb,UAlbany,UAlbany,Great Danes,ALBY,albny,University at Albany|ALBY,observed
+ncaamb:ALCN,ncaamb,Alcorn State,Alcorn State,Braves,ALCN,alcst,Alcorn St.|ALCN,observed
+ncaamb:AMCC,ncaamb,Texas A&M-Corpus Christi,Texas A&M-Corpus Christi,Islanders,AMCC,tamu,AMCC,observed
+ncaamb:AMER,ncaamb,American,American,Eagles,AMER,amercn,AMER,observed
+ncaamb:APP,ncaamb,Appalachian State,Appalachian State,Mountaineers,APP,applst,Appalachian St.|APP,observed
+ncaamb:ARIZ,ncaamb,Arizona,Arizona,Wildcats,ARIZ,arz,ARIZ,observed
+ncaamb:ARK,ncaamb,Arkansas,Arkansas,Razorbacks,ARK,ark,ARK,observed
+ncaamb:ARMY,ncaamb,Army,Army,Black Knights,ARMY,army,ARMY,observed
+ncaamb:ARPB,ncaamb,Arkansas-Pine Bluff,Arkansas-Pine Bluff,Golden Lions,ARPB,arpb,ARPB,observed
+ncaamb:ASU,ncaamb,Arizona State,Arizona State,Sun Devils,ASU,arzst,Arizona St.|ASU,observed
+ncaamb:AUB,ncaamb,Auburn,Auburn,Tigers,AUB,aubrn,AUB,observed
+ncaamb:BALL,ncaamb,Ball State,Ball State,Cardinals,BALL,ballst,Ball St.|BALL,observed
+ncaamb:BAY,ncaamb,Baylor,Baylor,Bears,BAY,bayl,BAY,observed
+ncaamb:BC,ncaamb,Boston College,Boston College,Eagles,BC,boscol,BC,observed
+ncaamb:BEL,ncaamb,Belmont,Belmont,Bruins,BEL,belm,BEL,observed
+ncaamb:BELL,ncaamb,Bellarmine,Bellarmine,Knights,BELL,bella,BELL,observed
+ncaamb:BGSU,ncaamb,Bowling Green,Bowling Green,Falcons,BGSU,bowlgr,BGSU,observed
+ncaamb:BING,ncaamb,Binghamton,Binghamton,Bearcats,BING,bing,BING,observed
+ncaamb:BRAD,ncaamb,Bradley,Bradley,Braves,BRAD,bradly,BRAD,observed
+ncaamb:BRWN,ncaamb,Brown,Brown,Bears,BRWN,brown,BROWN,observed
+ncaamb:BRY,ncaamb,Bryant,Bryant,Bulldogs,BRY,bryant,BRY,observed
+ncaamb:BSU,ncaamb,Boise State,Boise State,Broncos,BSU,boise,Boise St.|BSU,observed
+ncaamb:BU,ncaamb,Boston University,Boston University,Terriers,BU,bostu,BU,observed
+ncaamb:BUCK,ncaamb,Bucknell,Bucknell,Bison,BUCK,buck,BUCK,observed
+ncaamb:BUFF,ncaamb,Buffalo,Buffalo,Bulls,BUFF,buf,BUFF,observed
+ncaamb:BUT,ncaamb,Butler,Butler,Bulldogs,BUT,butl,BUT,observed
+ncaamb:BYU,ncaamb,BYU,BYU,Cougars,BYU,byu,,observed
+ncaamb:CAL,ncaamb,California,California,Golden Bears,CAL,cah,CAL,observed
+ncaamb:CAMP,ncaamb,Campbell,Campbell,Fighting Camels,CAMP,camp,CAMP,observed
+ncaamb:CAN,ncaamb,Canisius,Canisius,Golden Griffins,CAN,cans,CAN,observed
+ncaamb:CARK,ncaamb,UCA,UCA,Bears,CARK,cark,Central Arkansas,observed
+ncaamb:CBU,ncaamb,California Baptist,California Baptist,Lancers,CBU,cabap,CBU,observed
+ncaamb:CCSU,ncaamb,Central Connecticut State,Central Connecticut State,Blue Devils,CCSU,cencon,Central Connecticut St.|CCSU,observed
+ncaamb:CHAR,ncaamb,Charlotte,Charlotte,49ers,CHAR,charlt,CHAR,observed
+ncaamb:CHAT,ncaamb,Chattanooga,Chattanooga,Mocs,CHAT,chat,CHAT,observed
+ncaamb:CHS,ncaamb,Chicago State,Chicago State,Cougars,CHS,chist,Chicago St.|CHIST,observed
+ncaamb:CHSO,ncaamb,Charleston Southern,Charleston Southern,Buccaneers,CHSO,chsou,CHSO,observed
+ncaamb:CIN,ncaamb,Cincinnati,Cincinnati,Bearcats,CIN,cin,CIN,observed
+ncaamb:CIT,ncaamb,The Citadel,The Citadel,Bulldogs,CIT,cita,CIT,observed
+ncaamb:CLEM,ncaamb,Clemson,Clemson,Tigers,CLEM,clmsn,CLEM,observed
+ncaamb:CLEV,ncaamb,Cleveland State,Cleveland State,Vikings,CLEV,clvst,Cleveland St.|CLE,observed
+ncaamb:CLMB,ncaamb,Columbia,Columbia,Lions,CLMB,colmb,COLUM,observed
+ncaamb:CMU,ncaamb,Central Michigan,Central Michigan,Chippewas,CMU,cmich,CMU,observed
+ncaamb:COFC,ncaamb,Charleston,Charleston,Cougars,COFC,char,COFC,observed
+ncaamb:COLG,ncaamb,Colgate,Colgate,Raiders,COLG,colg,COLG,observed
+ncaamb:COLO,ncaamb,Colorado,Colorado,Buffaloes,COLO,col,COLO,observed
+ncaamb:CONN,ncaamb,UConn,UConn,Huskies,CONN,uconn,UCONN,observed
+ncaamb:COPP,ncaamb,Coppin State,Coppin State,Eagles,COPP,coppst,Coppin St.|COPP,observed
+ncaamb:COR,ncaamb,Cornell,Cornell,Big Red,COR,cornel,CORN,observed
+ncaamb:CP,ncaamb,Cal Poly,Cal Poly,Mustangs,CP,calpol,CP,observed
+ncaamb:CREI,ncaamb,Creighton,Creighton,Bluejays,CREI,creigh,CREI,observed
+ncaamb:CSB,ncaamb,Cal State Bakersfield,Cal State Bakersfield,Roadrunners,CSB,csu,CSUB,observed
+ncaamb:CSU,ncaamb,Colorado State,Colorado State,Rams,CSU,colst,Colorado St.|CSU,observed
+ncaamb:DART,ncaamb,Dartmouth,Dartmouth,Big Green,DART,dart,DART,observed
+ncaamb:DAV,ncaamb,Davidson,Davidson,Wildcats,DAV,david,DAV,observed
+ncaamb:DAY,ncaamb,Dayton,Dayton,Flyers,DAY,day,DAY,observed
+ncaamb:DEL,ncaamb,Delaware,Delaware,Fightin' Blue Hens,DEL,del,DEL,observed
+ncaamb:DEN,ncaamb,Denver,Denver,Pioneers,DEN,den,DEN,observed
+ncaamb:DEP,ncaamb,DePaul,DePaul,Blue Demons,DEP,depaul,DEP,observed
+ncaamb:DET,ncaamb,Detroit Mercy,Detroit Mercy,Titans,DET,det,DET,observed
+ncaamb:DREX,ncaamb,Drexel,Drexel,Dragons,DREX,drexel,DREX,observed
+ncaamb:DRKE,ncaamb,Drake,Drake,Bulldogs,DRKE,drake,DRKE,observed
+ncaamb:DSU,ncaamb,Delaware State,Delaware State,Hornets,DSU,delst,Delaware St.|DSU,observed
+ncaamb:DUKE,ncaamb,Duke,Duke,Blue Devils,DUKE,duke,DUKE,observed
+ncaamb:DUQ,ncaamb,Duquesne,Duquesne,Dukes,DUQ,duq,DUQ,observed
+ncaamb:ECU,ncaamb,East Carolina,East Carolina,Pirates,ECU,ecar,ECU,observed
+ncaamb:EIU,ncaamb,EIU,EIU,Panthers,EIU,eill,Eastern Illinois,observed
+ncaamb:ELON,ncaamb,Elon,Elon,Phoenix,ELON,elon,ELON,observed
+ncaamb:ETAM,ncaamb,East Texas A&M,East Texas A&M,Lions,ETAM,txamc,ETAMU,observed
+ncaamb:ETSU,ncaamb,East Tennessee State,East Tennessee State,Buccaneers,ETSU,etnst,East Tennessee St.|ETSU,observed
+ncaamb:EVAN,ncaamb,Evansville,Evansville,Purple Aces,EVAN,evans,UE,observed
+ncaamb:FAIR,ncaamb,Fairfield,Fairfield,Stags,FAIR,fair,FAIR,observed
+ncaamb:FAU,ncaamb,Florida Atlantic,Florida Atlantic,Owls,FAU,flatl,FAU,observed
+ncaamb:FDU,ncaamb,FDU,FDU,Knights,FDU,fairdk,,observed
+ncaamb:FGCU,ncaamb,Florida Gulf Coast,Florida Gulf Coast,Eagles,FGCU,flgc,FGCU,observed
+ncaamb:FIU,ncaamb,Florida International,Florida International,Panthers,FIU,flint,FIU,observed
+ncaamb:FLA,ncaamb,Florida,Florida,Gators,FLA,fl,FLA,observed
+ncaamb:FOR,ncaamb,Fordham,Fordham,Rams,FOR,fordm,FOR,observed
+ncaamb:FRES,ncaamb,Fresno State,Fresno State,Bulldogs,FRES,frest,Fresno St.|FRES,observed
+ncaamb:FSU,ncaamb,FSU,FSU,Seminoles,FSU,flst,Florida St.,observed
+ncaamb:FUR,ncaamb,Furman,Furman,Paladins,FUR,furman,FUR,observed
+ncaamb:GASO,ncaamb,Georgia Southern,Georgia Southern,Eagles,GASO,gas,GASO,observed
+ncaamb:GAST,ncaamb,Georgia State,Georgia State,Panthers,GAST,gast,Georgia St.|GSU,observed
+ncaamb:GB,ncaamb,Green Bay,Green Bay,Phoenix,GB,gb,GB,observed
+ncaamb:GC,ncaamb,Grand Canyon,Grand Canyon,Lopes,GC,gcan,GCU,observed
+ncaamb:GMU,ncaamb,George Mason,George Mason,Patriots,GMU,gmsn,GMU,observed
+ncaamb:GONZ,ncaamb,Gonzaga,Gonzaga,Bulldogs,GONZ,gnzg,GONZ,observed
+ncaamb:GT,ncaamb,Ga. Tech,Ga. Tech,Yellow Jackets,GT,gtech,Georgia Tech|GT,observed
+ncaamb:GTWN,ncaamb,Georgetown,Georgetown,Hoyas,GTWN,george,GTWN,observed
+ncaamb:GW,ncaamb,George Washington,George Washington,Revolutionaries,GW,geows,GW,observed
+ncaamb:HALL,ncaamb,Seton Hall,Seton Hall,Pirates,HALL,seton,HALL,observed
+ncaamb:HAMP,ncaamb,Hampton,Hampton,Pirates,HAMP,hamp,HAMP,observed
+ncaamb:HARV,ncaamb,Harvard,Harvard,Crimson,HARV,harvrd,HARV,observed
+ncaamb:HC,ncaamb,Holy Cross,Holy Cross,Crusaders,HC,holy,HC,observed
+ncaamb:HOF,ncaamb,Hofstra,Hofstra,Pride,HOF,hofst,HU,observed
+ncaamb:HOU,ncaamb,Houston,Houston,Cougars,HOU,hou,HOU,observed
+ncaamb:HOW,ncaamb,Howard,Howard,Bison,HOW,howrd,HOW,observed
+ncaamb:HP,ncaamb,High Point,High Point,Panthers,HP,hpnt,HPU,observed
+ncaamb:IDHO,ncaamb,Idaho,Idaho,Vandals,IDHO,idaho,IDHO,observed
+ncaamb:IDST,ncaamb,Idaho State,Idaho State,Bengals,IDST,idhst,Idaho St.|IDST,observed
+ncaamb:ILL,ncaamb,Illinois,Illinois,Fighting Illini,ILL,ill,ILL,observed
+ncaamb:ILST,ncaamb,Illinois State,Illinois State,Redbirds,ILST,illst,Illinois St.|ILST,observed
+ncaamb:IND,ncaamb,Indiana,Indiana,Hoosiers,IND,ind,IND,observed
+ncaamb:INST,ncaamb,Indiana State,Indiana State,Sycamores,INST,indst,Indiana St.|INST,observed
+ncaamb:IONA,ncaamb,Iona,Iona,Gaels,IONA,iona,IONA,observed
+ncaamb:IOWA,ncaamb,Iowa,Iowa,Hawkeyes,IOWA,iowa,IOWA,observed
+ncaamb:ISU,ncaamb,Iowa State,Iowa State,Cyclones,ISU,iowast,Iowa St.|ISU,observed
+ncaamb:IUIN,ncaamb,IU Indy,IU Indy,Jaguars,IUIN,iupui,IUIN,observed
+ncaamb:JKST,ncaamb,Jackson State,Jackson State,Tigers,JKST,jackst,Jackson St.|JKST,observed
+ncaamb:JMU,ncaamb,James Madison,James Madison,Dukes,JMU,jmad,JMU,observed
+ncaamb:JOES,ncaamb,Saint Joseph's,Saint Joseph's,Hawks,JOES,stjoe,JOES,observed
+ncaamb:JVST,ncaamb,Jacksonville State,Jacksonville State,Gamecocks,JVST,jaxst,Jacksonville St.|JVST,observed
+ncaamb:JWRI,ncaamb,Johnson & Wales (RI),Johnson & Wales (RI),Wildcats,JWRI,jwri,JWRI,observed
+ncaamb:KENT,ncaamb,Kent State,Kent State,Golden Flashes,KENT,kentst,Kent St.|KENT,observed
+ncaamb:LAF,ncaamb,Lafayette,Lafayette,Leopards,LAF,lafay,LAF,observed
+ncaamb:LAS,ncaamb,La Salle,La Salle,Explorers,LAS,lasal,LAS,observed
+ncaamb:LBSU,ncaamb,Long Beach State,Long Beach State,Beach,LBSU,lbst,Long Beach St.|LBSU,observed
+ncaamb:LCHI,ncaamb,Loyola Chicago,Loyola Chicago,Ramblers,LCHI,loych,LUC,observed
+ncaamb:LEH,ncaamb,Lehigh,Lehigh,Mountain Hawks,LEH,lehi,LEH,observed
+ncaamb:LIB,ncaamb,Liberty,Liberty,Flames,LIB,librty,LIB,observed
+ncaamb:LINW,ncaamb,Lindenwood,Lindenwood,Lions,LINW,jac,LIN,observed
+ncaamb:LIP,ncaamb,Lipscomb,Lipscomb,Bisons,LIP,lipsc,LIP,observed
+ncaamb:LIU,ncaamb,LIU,LIU,Sharks,LIU,liub,,observed
+ncaamb:LMC,ncaamb,Le Moyne,Le Moyne,Dolphins,LMC,lemyn,LEM,observed
+ncaamb:LMD,ncaamb,Loyola Maryland,Loyola Maryland,Greyhounds,LMD,loymd,LOYMD,observed
+ncaamb:LMU,ncaamb,Loyola Marymount,Loyola Marymount,Lions,LMU,loymry,LMU,observed
+ncaamb:LONG,ncaamb,Longwood,Longwood,Lancers,LONG,longwd,LONG,observed
+ncaamb:LOU,ncaamb,Louisville,Louisville,Cardinals,LOU,lou,LOU,observed
+ncaamb:LSU,ncaamb,LSU,LSU,Tigers,LSU,lsu,,observed
+ncaamb:LT,ncaamb,Louisiana Tech,Louisiana Tech,Bulldogs,LT,loutch,LT,observed
+ncaamb:MAN,ncaamb,Manhattan,Manhattan,Jaspers,MAN,manh,MAN,observed
+ncaamb:MARQ,ncaamb,Marquette,Marquette,Golden Eagles,MARQ,marq,MARQ,observed
+ncaamb:MASS,ncaamb,UMass,UMass,Minutemen,MASS,umass,UMASS,observed
+ncaamb:MASSL,ncaamb,UML,UML,River Hawks,MASSL,maslow,UMass Lowell,observed
+ncaamb:MD,ncaamb,Maryland,Maryland,Terrapins,MD,mary,UMD,observed
+ncaamb:ME,ncaamb,Maine,Maine,Black Bears,ME,maine,MAINE,observed
+ncaamb:MEM,ncaamb,Memphis,Memphis,Tigers,MEM,mphs,MEM,observed
+ncaamb:MER,ncaamb,Mercer,Mercer,Bears,MER,merc,MER,observed
+ncaamb:MHU,ncaamb,Mercyhurst,Mercyhurst,Lakers,MHU,mrcy,MERC,observed
+ncaamb:MIA,ncaamb,Miami (FL),Miami (FL),Hurricanes,MIA,mia,MIA,observed
+ncaamb:MICH,ncaamb,Michigan,Michigan,Wolverines,MICH,mich,MICH,observed
+ncaamb:MILW,ncaamb,Milwaukee,Milwaukee,Panthers,MILW,wbd,MILW,observed
+ncaamb:MINN,ncaamb,Minnesota,Minnesota,Golden Gophers,MINN,minnst,MINN,observed
+ncaamb:MIZZ,ncaamb,Missouri,Missouri,Tigers,MIZZ,missr,MIZZ,observed
+ncaamb:MOH,ncaamb,Miami (OH),Miami (OH),RedHawks,MOH,miaoh,M-OH,observed
+ncaamb:MONM,ncaamb,Monmouth,Monmouth,Hawks,MONM,monm,MONM,observed
+ncaamb:MONT,ncaamb,Montana,Montana,Grizzlies,MONT,mont,MONT,observed
+ncaamb:MORE,ncaamb,Morehead State,Morehead State,Eagles,MORE,mhst,Morehead St.|MORE,observed
+ncaamb:MORG,ncaamb,Morgan State,Morgan State,Bears,MORG,morgst,Morgan St.|MORG,observed
+ncaamb:MRMK,ncaamb,Merrimack,Merrimack,Warriors,MRMK,merri,MERR,observed
+ncaamb:MRSH,ncaamb,Marshall,Marshall,Thundering Herd,MRSH,marsh,MRSH,observed
+ncaamb:MRST,ncaamb,Marist,Marist,Red Foxes,MRST,marist,MAR,observed
+ncaamb:MSM,ncaamb,Mount St. Mary's,Mount St. Mary's,Mountaineers,MSM,mstm,MOUNT,observed
+ncaamb:MSST,ncaamb,Mississippi State,Mississippi State,Bulldogs,MSST,mspst,Mississippi St.|MSST,observed
+ncaamb:MSU,ncaamb,Michigan State,Michigan State,Spartans,MSU,mst,Michigan St.,observed
+ncaamb:MTST,ncaamb,Montana State,Montana State,Bobcats,MTST,monst,Montana St.|MTST,observed
+ncaamb:MTU,ncaamb,Middle Tennessee,Middle Tennessee,Blue Raiders,MTU,mtnst,MTSU,observed
+ncaamb:MURR,ncaamb,Murray State,Murray State,Racers,MURR,murst,Murray St.|MURR,observed
+ncaamb:MVSU,ncaamb,Mississippi Valley State,Mississippi Valley State,Delta Devils,MVSU,msvlst,Mississippi Valley St.|MVSU,observed
+ncaamb:NAU,ncaamb,NAU,NAU,Lumberjacks,NAU,narz,Northern Arizona,observed
+ncaamb:NAVY,ncaamb,Navy,Navy,Midshipmen,NAVY,navy,NAVY,observed
+ncaamb:NCCU,ncaamb,North Carolina Central,North Carolina Central,Eagles,NCCU,ncc,NCC,observed
+ncaamb:NCST,ncaamb,NC State,NC State,Wolfpack,NCST,ncst,NC St.|NCSU,observed
+ncaamb:ND,ncaamb,Notre Dame,Notre Dame,Fighting Irish,ND,nd,ND,observed
+ncaamb:NDSU,ncaamb,North Dakota State,North Dakota State,Bison,NDSU,ndkst,North Dakota St.|NDSU,observed
+ncaamb:NE,ncaamb,Northeastern,Northeastern,Huskies,NE,neast,NEU,observed
+ncaamb:NEB,ncaamb,Nebraska,Nebraska,Cornhuskers,NEB,nebr,NEB,observed
+ncaamb:NEOM,ncaamb,Omaha,Omaha,Mavericks,NEOM,neom,OMA,observed
+ncaamb:NEV,ncaamb,Nevada,Nevada,Wolf Pack,NEV,nevada,NEV,observed
+ncaamb:NHC,ncaamb,New Haven,New Haven,Chargers,NHC,nhvn,NHVN,observed
+ncaamb:NIAG,ncaamb,Niagara,Niagara,Purple Eagles,NIAG,niagra,NIAG,observed
+ncaamb:NICH,ncaamb,Nicholls,Nicholls,Colonels,NICH,nichls,Nicholls St.|NICH,observed
+ncaamb:NIU,ncaamb,Northern Illinois,Northern Illinois,Huskies,NIU,nill,NIU,observed
+ncaamb:NJIT,ncaamb,NJIT,NJIT,Highlanders,NJIT,njit,,observed
+ncaamb:NKU,ncaamb,Northern Kentucky,Northern Kentucky,Norse,NKU,nkent,NKU,observed
+ncaamb:NMSU,ncaamb,NM State,NM State,Aggies,NMSU,nmxst,New Mexico St.|NMSU,observed
+ncaamb:NORF,ncaamb,Norfolk State,Norfolk State,Spartans,NORF,norfst,Norfolk St.|NORF,observed
+ncaamb:NW,ncaamb,Northwestern,Northwestern,Wildcats,NW,nw,NW,observed
+ncaamb:NWST,ncaamb,Northwestern State,Northwestern State,Demons,NWST,nwst,Northwestern St.|NWST,observed
+ncaamb:OAK,ncaamb,Oakland,Oakland,Golden Grizzlies,OAK,oak,OAK,observed
+ncaamb:ODU,ncaamb,Old Dominion,Old Dominion,Monarchs,ODU,old,ODU,observed
+ncaamb:OHIO,ncaamb,Ohio,Ohio,Bobcats,OHIO,ohio,OHIO,observed
+ncaamb:OKLA,ncaamb,Oklahoma,Oklahoma,Sooners,OKLA,okl,OKLA,observed
+ncaamb:OKST,ncaamb,Oklahoma State,Oklahoma State,Cowboys,OKST,okst,Oklahoma St.|OKST,observed
+ncaamb:ORE,ncaamb,Oregon,Oregon,Ducks,ORE,ore,ORE,observed
+ncaamb:ORST,ncaamb,Ore. State,Ore. State,Beavers,ORST,oregst,Oregon St.|ORST,observed
+ncaamb:ORU,ncaamb,Oral Roberts,Oral Roberts,Golden Eagles,ORU,oral,ORU,observed
+ncaamb:OSU,ncaamb,Ohio State,Ohio State,Buckeyes,OSU,ohiost,Ohio St.|OSU,observed
+ncaamb:PAC,ncaamb,Pacific,Pacific,Tigers,PAC,pacfc,PAC,observed
+ncaamb:PEAY,ncaamb,Austin Peay,Austin Peay,Governors,PEAY,ausp,PEAY,observed
+ncaamb:PENN,ncaamb,Penn,Penn,Quakers,PENN,penn,PENN,observed
+ncaamb:PEPP,ncaamb,Pepperdine,Pepperdine,Waves,PEPP,pepp,PEPP,observed
+ncaamb:PFW,ncaamb,Purdue Fort Wayne,Purdue Fort Wayne,Mastodons,PFW,ipfw,PFW,observed
+ncaamb:PITT,ncaamb,Pittsburgh,Pittsburgh,Panthers,PITT,pitt,PITT,observed
+ncaamb:PORT,ncaamb,Portland,Portland,Pilots,PORT,port,PORT,observed
+ncaamb:PRIN,ncaamb,Princeton,Princeton,Tigers,PRIN,prnce,PRIN,observed
+ncaamb:PROV,ncaamb,Providence,Providence,Friars,PROV,prov,PROV,observed
+ncaamb:PRST,ncaamb,Portland State,Portland State,Vikings,PRST,portst,Portland St.|PRST,observed
+ncaamb:PSU,ncaamb,Penn State,Penn State,Nittany Lions,PSU,pennst,Penn St.|PSU,observed
+ncaamb:PUR,ncaamb,Purdue,Purdue,Boilermakers,PUR,pur,PUR,observed
+ncaamb:PV,ncaamb,Prairie View A&M,Prairie View A&M,Panthers,PV,pvam,PV,observed
+ncaamb:QUC,ncaamb,Queens University,Queens University,Royals,QUC,queen,QUC,observed
+ncaamb:QUIN,ncaamb,Quinnipiac,Quinnipiac,Bobcats,QUIN,quin,QUIN,observed
+ncaamb:RICE,ncaamb,Rice,Rice,Owls,RICE,rice,RICE,observed
+ncaamb:RICH,ncaamb,Richmond,Richmond,Spiders,RICH,rich,RICH,observed
+ncaamb:RID,ncaamb,Rider,Rider,Broncs,RID,rider,RID,observed
+ncaamb:RMU,ncaamb,Robert Morris,Robert Morris,Colonials,RMU,robms,RMU,observed
+ncaamb:RUTG,ncaamb,Rutgers,Rutgers,Scarlet Knights,RUTG,rutger,RUTG,observed
+ncaamb:SAC,ncaamb,Sacramento State,Sacramento State,Hornets,SAC,sacst,Sacramento St.|SAC,observed
+ncaamb:SAM,ncaamb,Samford,Samford,Bulldogs,SAM,samf,SAM,observed
+ncaamb:SBON,ncaamb,St. Bonaventure,St. Bonaventure,Bonnies,SBON,stbon,SBU,observed
+ncaamb:SCAR,ncaamb,South Carolina,South Carolina,Gamecocks,SCAR,sc,SCAR,observed
+ncaamb:SCST,ncaamb,South Carolina State,South Carolina State,Bulldogs,SCST,scarst,South Carolina St.|SCST,observed
+ncaamb:SCU,ncaamb,Santa Clara,Santa Clara,Broncos,SCU,sanclr,SCU,observed
+ncaamb:SCUS,ncaamb,USC Upstate,USC Upstate,Spartans,SCUS,scup,UPST,observed
+ncaamb:SDAK,ncaamb,South Dakota,South Dakota,Coyotes,SDAK,sdak,SDAK,observed
+ncaamb:SDST,ncaamb,South Dakota State,South Dakota State,Jackrabbits,SDST,sdkst,South Dakota St.|SDKSU,observed
+ncaamb:SDSU,ncaamb,San Diego State,San Diego State,Aztecs,SDSU,sdst,San Diego St.|SDSU,observed
+ncaamb:SEA,ncaamb,Seattle,Seattle,Redhawks,SEA,sea,SEA,observed
+ncaamb:SEMO,ncaamb,Southeast Missouri State,Southeast Missouri State,Redhawks,SEMO,semst,Southeast Missouri St.|SEMO,observed
+ncaamb:SF,ncaamb,San Francisco,San Francisco,Dons,SF,sf,SF,observed
+ncaamb:SFA,ncaamb,Stephen F. Austin,Stephen F. Austin,Lumberjacks,SFA,sfaus,SFA,observed
+ncaamb:SHSU,ncaamb,Sam Houston,Sam Houston,Bearkats,SHSU,smho,SMHO,observed
+ncaamb:SHU,ncaamb,Sacred Heart,Sacred Heart,Pioneers,SHU,sacred,SHU,observed
+ncaamb:SIE,ncaamb,Siena,Siena,Saints,SIE,siena,SIE,observed
+ncaamb:SIU,ncaamb,Southern Illinois,Southern Illinois,Salukis,SIU,sill,SIU,observed
+ncaamb:SIUE,ncaamb,SIU Edwardsville,SIU Edwardsville,Cougars,SIUE,siue,SIUE,observed
+ncaamb:SJSU,ncaamb,San Jose State,San Jose State,Spartans,SJSU,sjst,San Jose St.|SJSU,observed
+ncaamb:SJU,ncaamb,St. John's,St. John's,Red Storm,SJU,stjohn,SJU,observed
+ncaamb:SLU,ncaamb,Saint Louis,Saint Louis,Billikens,SLU,stlou,SLU,observed
+ncaamb:SMC,ncaamb,Saint Mary's,Saint Mary's,Gaels,SMC,stmry,SMC,observed
+ncaamb:SMU,ncaamb,SMU,SMU,Mustangs,SMU,smu,,observed
+ncaamb:SOU,ncaamb,Southern,Southern,Jaguars,SOU,south,Southern University|SOU,observed
+ncaamb:SPC,ncaamb,Saint Peter's,Saint Peter's,Peacocks,SPC,stpete,SPU,observed
+ncaamb:STAN,ncaamb,Stanford,Stanford,Cardinal,STAN,stan,STAN,observed
+ncaamb:STET,ncaamb,Stetson,Stetson,Hatters,STET,stetsn,STET,observed
+ncaamb:STNH,ncaamb,Stonehill,Stonehill,Skyhawks,STNH,stnh,STO,observed
+ncaamb:STON,ncaamb,Stony Brook,Stony Brook,Seawolves,STON,stbr,STBK,observed
+ncaamb:SUU,ncaamb,Southern Utah,Southern Utah,Thunderbirds,SUU,sutah,SUU,observed
+ncaamb:TARL,ncaamb,Tarleton State,Tarleton State,Texans,TARL,tarl,Tarleton St.|TAR,observed
+ncaamb:TCU,ncaamb,TCU,TCU,Horned Frogs,TCU,tcu,,observed
+ncaamb:TEM,ncaamb,Temple,Temple,Owls,TEM,templ,TEM,observed
+ncaamb:TENN,ncaamb,Tennessee,Tennessee,Volunteers,TENN,tenn,TENN,observed
+ncaamb:TEX,ncaamb,Texas,Texas,Longhorns,TEX,tx,TEX,observed
+ncaamb:TLSA,ncaamb,Tulsa,Tulsa,Golden Hurricane,TLSA,tulsa,TLSA,observed
+ncaamb:TNST,ncaamb,Tenn. State,Tenn. State,Tigers,TNST,tenst,Tennessee St.|TNST,observed
+ncaamb:TNTC,ncaamb,Tennessee Tech,Tennessee Tech,Golden Eagles,TNTC,tentch,TNTC,observed
+ncaamb:TOL,ncaamb,Toledo,Toledo,Rockets,TOL,toledo,TOL,observed
+ncaamb:TOWS,ncaamb,Towson,Towson,Tigers,TOWS,tows,TOWS,observed
+ncaamb:TROY,ncaamb,Troy,Troy,Trojans,TROY,troy,TROY,observed
+ncaamb:TTU,ncaamb,Texas Tech,Texas Tech,Red Raiders,TTU,txtech,TTU,observed
+ncaamb:TULN,ncaamb,Tulane,Tulane,Green Wave,TULN,tulane,TULN,observed
+ncaamb:TXAM,ncaamb,Texas A&M,Texas A&M,Aggies,TXAM,txam,TAMU,observed
+ncaamb:TXSO,ncaamb,Texas Southern,Texas Southern,Tigers,TXSO,txs,TXSO,observed
+ncaamb:TXST,ncaamb,Texas State,Texas State,Bobcats,TXST,txst,Texas St.|TXST,observed
+ncaamb:UAB,ncaamb,UAB,UAB,Blazers,UAB,uab,,observed
+ncaamb:UALR,ncaamb,Little Rock,Little Rock,Trojans,UALR,arlr,LR,observed
+ncaamb:UCD,ncaamb,UC Davis,UC Davis,Aggies,UCD,ucdv,UCD,observed
+ncaamb:UCF,ncaamb,UCF,UCF,Knights,UCF,ucf,,observed
+ncaamb:UCLA,ncaamb,UCLA,UCLA,Bruins,UCLA,ucla,,observed
+ncaamb:UCRV,ncaamb,UC Riverside,UC Riverside,Highlanders,UCRV,ucrvs,UCR,observed
+ncaamb:UCSB,ncaamb,UC Santa Barbara,UC Santa Barbara,Gauchos,UCSB,uscb,UCSB,observed
+ncaamb:UCSD,ncaamb,UC San Diego,UC San Diego,Tritons,UCSD,ucsd,UCSD,observed
+ncaamb:UGA,ncaamb,Georgia,Georgia,Bulldogs,UGA,ga,UGA,observed
+ncaamb:UIC,ncaamb,UIC,UIC,Flames,UIC,illchi,,observed
+ncaamb:UK,ncaamb,Kentucky,Kentucky,Wildcats,UK,uk,UK,observed
+ncaamb:ULL,ncaamb,Louisiana,Louisiana,Ragin' Cajuns,ULL,loulaf,ULL,observed
+ncaamb:ULM,ncaamb,Louisiana-Monroe,Louisiana-Monroe,Warhawks,ULM,lamon,ULM,observed
+ncaamb:UMBC,ncaamb,UMBC,UMBC,Retrievers,UMBC,umbc,,observed
+ncaamb:UMES,ncaamb,Maryland-Eastern Shore,Maryland-Eastern Shore,Hawks,UMES,mdes,UMES,observed
+ncaamb:UMKC,ncaamb,Kansas City,Kansas City,Roos,UMKC,umkc,KC,observed
+ncaamb:UNA,ncaamb,North Alabama,North Alabama,Lions,UNA,nal,UNA,observed
+ncaamb:UNC,ncaamb,North Carolina,North Carolina,Tar Heels,UNC,ncar,UNC,observed
+ncaamb:UNCA,ncaamb,UNC Asheville,UNC Asheville,Bulldogs,UNCA,ncashe,UNCA,observed
+ncaamb:UNCG,ncaamb,UNC Greensboro,UNC Greensboro,Spartans,UNCG,ncg,UNCG,observed
+ncaamb:UNCO,ncaamb,Northern Colorado,Northern Colorado,Bears,UNCO,ncol,UNCO,observed
+ncaamb:UNCW,ncaamb,UNCW,UNCW,Seahawks,UNCW,ncw,UNC Wilmington,observed
+ncaamb:UND,ncaamb,North Dakota,North Dakota,Fighting Hawks,UND,ndak,UND,observed
+ncaamb:UNF,ncaamb,North Florida,North Florida,Ospreys,UNF,nfl,UNF,observed
+ncaamb:UNH,ncaamb,New Hampshire,New Hampshire,Wildcats,UNH,nhamp,UNH,observed
+ncaamb:UNI,ncaamb,Northern Iowa,Northern Iowa,Panthers,UNI,niowa,UNI,observed
+ncaamb:UNLV,ncaamb,UNLV,UNLV,Runnin' Rebels,UNLV,unlv,,observed
+ncaamb:UNM,ncaamb,New Mexico,New Mexico,Lobos,UNM,nmx,UNM,observed
+ncaamb:UNT,ncaamb,North Texas,North Texas,Mean Green,UNT,ntx,UNT,observed
+ncaamb:URI,ncaamb,Rhode Island,Rhode Island,Rams,URI,ri,URI,observed
+ncaamb:USA,ncaamb,South Alabama,South Alabama,Jaguars,USA,sala,USA,observed
+ncaamb:USC,ncaamb,USC,USC,Trojans,USC,usc,,observed
+ncaamb:USD,ncaamb,San Diego,San Diego,Toreros,USD,sd,USD,observed
+ncaamb:USF,ncaamb,South Florida,South Florida,Bulls,USF,sfl,USF,observed
+ncaamb:USI,ncaamb,Southern Indiana,Southern Indiana,Screaming Eagles,USI,usi,USI,observed
+ncaamb:USM,ncaamb,Southern Miss,Southern Miss,Golden Eagles,USM,soumis,USM,observed
+ncaamb:UST,ncaamb,St. Thomas (MN),St. Thomas (MN),Tommies,UST,stmn,St. Thomas|TOM,observed
+ncaamb:USU,ncaamb,Utah State,Utah State,Aggies,USU,utahst,Utah St.|USU,observed
+ncaamb:UTA,ncaamb,UT Arlington,UT Arlington,Mavericks,UTA,txa,UTA,observed
+ncaamb:UTAH,ncaamb,Utah,Utah,Runnin' Utes,UTAH,utah,UTAH,observed
+ncaamb:UTEP,ncaamb,UTEP,UTEP,Miners,UTEP,utep,,observed
+ncaamb:UTRGV,ncaamb,UT Rio Grande Valley,UT Rio Grande Valley,Vaqueros,UTRGV,utrgv,UTRGV,observed
+ncaamb:UTSA,ncaamb,UTSA,UTSA,Roadrunners,UTSA,utsa,,observed
+ncaamb:UTU,ncaamb,Utah Tech,Utah Tech,Trailblazers,UTU,dxst,UT,observed
+ncaamb:UVA,ncaamb,Virginia,Virginia,Cavaliers,UVA,vir,UVA,observed
+ncaamb:UVU,ncaamb,Utah Valley,Utah Valley,Wolverines,UVU,utahv,UVU,observed
+ncaamb:UWFL,ncaamb,West Florida,West Florida,Argonauts,UWFL,uwfl,UWFL,observed
+ncaamb:UWGA,ncaamb,West Georgia,West Georgia,Wolves,UWGA,uwg,UWG,observed
+ncaamb:VALP,ncaamb,Valparaiso,Valparaiso,Beacons,VALP,valp,VALP,observed
+ncaamb:VAN,ncaamb,Vanderbilt,Vanderbilt,Commodores,VAN,vand,VAN,observed
+ncaamb:VCU,ncaamb,VCU,VCU,Rams,VCU,vcu,,observed
+ncaamb:VILL,ncaamb,Villanova,Villanova,Wildcats,VILL,vill,NOVA,observed
+ncaamb:VIT,ncaamb,Viterbo,Viterbo,Hawks,VIT,vit,VIT,observed
+ncaamb:VT,ncaamb,Virginia Tech,Virginia Tech,Hokies,VT,vtech,VT,observed
+ncaamb:WAKE,ncaamb,Wake Forest,Wake Forest,Demon Deacons,WAKE,wake,WAKE,observed
+ncaamb:WASH,ncaamb,Washington,Washington,Huskies,WASH,wash,WASH,observed
+ncaamb:WCU,ncaamb,Western Carolina,Western Carolina,Catamounts,WCU,wcar,WCU,observed
+ncaamb:WEBB,ncaamb,Gardner-Webb,Gardner-Webb,Runnin' Bulldogs,WEBB,gardwb,WEBB,observed
+ncaamb:WICH,ncaamb,Wichita State,Wichita State,Shockers,WICH,wichst,Wichita St.|WICH,observed
+ncaamb:WIN,ncaamb,Winthrop,Winthrop,Eagles,WIN,winth,WIN,observed
+ncaamb:WIU,ncaamb,Western Illinois,Western Illinois,Leathernecks,WIU,will,WIU,observed
+ncaamb:WM,ncaamb,William & Mary,William & Mary,Tribe,WM,wm,W&M,observed
+ncaamb:WMU,ncaamb,Western Michigan,Western Michigan,Broncos,WMU,wmich,WMU,observed
+ncaamb:WOF,ncaamb,Wofford,Wofford,Terriers,WOF,woff,WOF,observed
+ncaamb:WRST,ncaamb,Wright State,Wright State,Raiders,WRST,wrght,Wright St.|WRST,observed
+ncaamb:WVU,ncaamb,West Virginia,West Virginia,Mountaineers,WVU,wvir,WVU,observed
+ncaamb:WYO,ncaamb,Wyoming,Wyoming,Cowboys,WYO,wyom,WYO,observed
+ncaamb:XAV,ncaamb,Xavier,Xavier,Musketeers,XAV,xav,XAV,observed
+ncaamb:YALE,ncaamb,Yale,Yale,Bulldogs,YALE,yale,YALE,observed
+ncaamb:YSU,ncaamb,Youngstown State,Youngstown State,Penguins,YSU,yngst,Youngstown St.|YSU,observed
+ncaamb:ABAC,ncaamb,Abraham Baldwin Agricultural College,Abraham Baldwin Agricultural College,Golden Stallions,,abac,ABAC,observed
+ncaamb:ALAST,ncaamb,Alabama State,Alabama State,Hornets,,alast,ALST,observed
+ncaamb:ARKST,ncaamb,Arkansas State,Arkansas State,Red Wolves,,arkst,ARST,observed
+ncaamb:BBC,ncaamb,Blackburn College,Blackburn College,Beavers,,bbc,BBC,observed
+ncaamb:BCOOK,ncaamb,Bethune-Cookman,Bethune-Cookman,Wildcats,,bcook,COOK,observed
+ncaamb:BRSTA,ncaamb,Bryant & Stratton (Albany),Bryant & Stratton (Albany),Bobcats,,brsta,BRSTAL,observed
+ncaamb:CAP,ncaamb,Capital,Capital,Comets,,cap,CAP,observed
+ncaamb:CBAP,ncaamb,Champion Christian College,Champion Christian College,Tigers,,cbap,CBAP,observed
+ncaamb:CCLA,ncaamb,Centenary College of Louisiana,Centenary College of Louisiana,Gentlemen,,ccla,CCLA,observed
+ncaamb:CCSJ,ncaamb,Calumet College of St. Joseph,Calumet College of St. Joseph,Crimson Wave,,ccsj,CCSJ,observed
+ncaamb:CG,ncaamb,Coastal Georgia,Coastal Georgia,Mariners,,cg,CG,observed
+ncaamb:CHEY,ncaamb,Cheyney,Cheyney,Wolves,,chey,CHEY,observed
+ncaamb:CMPB,ncaamb,Campbellsville,Campbellsville,Tigers,,cmpb,CMPB,observed
+ncaamb:COAST,ncaamb,Coastal Carolina,Coastal Carolina,Chanticleers,,coast,CCAR,observed
+ncaamb:COBS,ncaamb,College of Biblical Studies,College of Biblical Studies,Ambassadors,,cobs,COBS,observed
+ncaamb:COLM,ncaamb,Columbia College,Columbia College,Koalas,,colm,COLM,observed
+ncaamb:CORB,ncaamb,Corban,Corban,Warriors,,corb,CORB,observed
+ncaamb:CSUFL,ncaamb,Cal State Fullerton,Cal State Fullerton,Titans,,csufl,CSUF,observed
+ncaamb:CSUNR,ncaamb,Cal State Northridge,Cal State Northridge,Matadors,,csunr,CSUN,observed
+ncaamb:DCC,ncaamb,Dallas Christian,Dallas Christian,Crusaders,,dcc,DCC,observed
+ncaamb:DEFC,ncaamb,Defiance,Defiance,Yellow Jackets,,defc,DEFC,observed
+ncaamb:DILL,ncaamb,Dillard,Dillard,Bleu Devils,,dill,DILL,observed
+ncaamb:DOAN,ncaamb,Doane,Doane,Tigers,,doan,DOAN,observed
+ncaamb:DSALE,ncaamb,DeSales,DeSales,Bulldogs,,dsale,DSALE,observed
+ncaamb:EARL,ncaamb,Earlham,Earlham,Quakers,,earl,EARL,observed
+ncaamb:ECCC,ncaamb,Ecclesia,Ecclesia,Royals,,eccc,ECCC,observed
+ncaamb:EKENT,ncaamb,Eastern Kentucky,Eastern Kentucky,Colonels,,ekent,EKY,observed
+ncaamb:EMC,ncaamb,Emmanuel (MA),Emmanuel (MA),Saints,,emc,EMC,observed
+ncaamb:EMICH,ncaamb,Eastern Michigan,Eastern Michigan,Eagles,,emich,EMU,observed
+ncaamb:ERAZ,ncaamb,Embry-Riddle Aeronautical (AZ),Embry-Riddle Aeronautical (AZ),Eagles,,eraz,ERAZ,observed
+ncaamb:ERSK,ncaamb,Erskine,Erskine,Flying Fleet,,ersk,ERSK,observed
+ncaamb:EWASH,ncaamb,Eastern Washington,Eastern Washington,Eagles,,ewash,EWU,observed
+ncaamb:FC,ncaamb,Ferrum,Ferrum,Panthers,,fc,FC,observed
+ncaamb:FISK,ncaamb,Fisk,Fisk,Bulldogs,,fisk,FISK,observed
+ncaamb:FLAM,ncaamb,Florida A&M,Florida A&M,Rattlers,,flam,FAMU,observed
+ncaamb:FMU,ncaamb,Florida Memorial,Florida Memorial,Lions,,fmu,FMU,observed
+ncaamb:FRNK,ncaamb,Franklin,Franklin,Grizzlies,,frnk,FRNK,observed
+ncaamb:FUF,ncaamb,Friends,Friends,Falcons,,fuf,FUF,observed
+ncaamb:GRAC,ncaamb,Grace (CA),Grace (CA),Talons,,grac,GRAC,observed
+ncaamb:GRMBST,ncaamb,Grambling State,Grambling State,Tigers,,grmbst,GRAM,observed
+ncaamb:HAWAII,ncaamb,Hawai'i,Hawai'i,Rainbow Warriors,,hawaii,HAW,observed
+ncaamb:HOUBAP,ncaamb,Houston Christian,Houston Christian,Huskies,,houbap,HCU,observed
+ncaamb:INCAR,ncaamb,Incarnate Word,Incarnate Word,Cardinals,,incar,IW,observed
+ncaamb:JAX,ncaamb,Jacksonville,Jacksonville,Dolphins,,jax,JAX,observed
+ncaamb:KAN,ncaamb,Kansas,Kansas,Jayhawks,,kan,KU,observed
+ncaamb:KANST,ncaamb,Kansas State,Kansas State,Wildcats,,kanst,KSU,observed
+ncaamb:KENEST,ncaamb,Kennesaw State,Kennesaw State,Owls,,kenest,KENN,observed
+ncaamb:KSU,ncaamb,Kentucky State,Kentucky State,Thorobreds,,ksu,,observed
+ncaamb:LAKE,ncaamb,Wright State Lake,Wright State Lake,Lakers,,lake,LAKE,observed
+ncaamb:LAMAR,ncaamb,Lamar,Lamar,Cardinals,,lamar,LAM,observed
+ncaamb:LC,ncaamb,Louisiana Christian,Louisiana Christian,Wildcats,,lc,LC,observed
+ncaamb:LGRA,ncaamb,LaGrange,LaGrange,Panthers,,lgra,LGRA,observed
+ncaamb:LIFE,ncaamb,Life University,Life University,Running Eagles,,life,LIFE,observed
+ncaamb:LINCA,ncaamb,Lincoln (CA),Lincoln (CA),Oaklanders,,linca,LINCA,observed
+ncaamb:LMC2,ncaamb,Lees-McRae,Lees-McRae,Bobcats,,lmc,LMC,observed
+ncaamb:LW,ncaamb,Lindsey Wilson,Lindsey Wilson,Blue Raiders,,lw,LW,observed
+ncaamb:MACA,ncaamb,Macalester,Macalester,Scots,,maca,MACA,observed
+ncaamb:MALO,ncaamb,Malone,Malone,Pioneers,,malo,MALO,observed
+ncaamb:MBU,ncaamb,Mary Baldwin,Mary Baldwin,Fighting Squirrels,,mbu,MBU,observed
+ncaamb:MCLA,ncaamb,Massachusetts College of Liberal Arts,Massachusetts College of Liberal Arts,Trailblazers,,mcla,MCLA,observed
+ncaamb:MCM,ncaamb,McMurry,McMurry,War Hawks,,mcm,MCM,observed
+ncaamb:MHAM,ncaamb,Miami-Hamilton,Miami-Hamilton,Harriers,,mham,MHAM,observed
+ncaamb:MID,ncaamb,Midway,Midway,Eagles,,mid,MID,observed
+ncaamb:MISE,ncaamb,Misericordia,Misericordia,Cougars,,mise,MISE,observed
+ncaamb:MISS,ncaamb,Ole Miss,Ole Miss,Rebels,,miss,MISS,observed
+ncaamb:MSRST,ncaamb,Missouri State,Missouri State,Bears,,msrst,MOST,observed
+ncaamb:MSU2,ncaamb,Mayville State,Mayville State,Comets,,msu,,observed
+ncaamb:NCAT,ncaamb,North Carolina A&T,North Carolina A&T,Aggies,,ncat,NCAT,observed
+ncaamb:NEWM,ncaamb,Newman,Newman,Jets,,newm,NEWM,observed
+ncaamb:NO,ncaamb,New Orleans,New Orleans,Privateers,,no,UNO,observed
+ncaamb:NU,ncaamb,Northwest University,Northwest University,Eagles,,nu,NU,observed
+ncaamb:NVUL,ncaamb,Vermont State-Lyndon,Vermont State-Lyndon,Hornets,,nvul,NVU-L,observed
+ncaamb:NYPL,ncaamb,SUNY-Plattsburgh,SUNY-Plattsburgh,Cardinals,,nypl,NYPL,observed
+ncaamb:NYPO,ncaamb,SUNY-Potsdam,SUNY-Potsdam,Bears,,nypo,NYPO,observed
+ncaamb:OKLC,ncaamb,Oklahoma City,Oklahoma City,Stars,,oklc,OKLC,observed
+ncaamb:OPSU,ncaamb,Oklahoma Panhandle State,Oklahoma Panhandle State,Aggies,,opsu,OPSU,observed
+ncaamb:PC,ncaamb,Paine,Paine,Lions,,pc,PC,observed
+ncaamb:PRESB,ncaamb,Presbyterian,Presbyterian,Blue Hose,,presb,PRE,observed
+ncaamb:PUC,ncaamb,Pacific Union College,Pacific Union College,Pioneers,,puc,PUC,observed
+ncaamb:RADF,ncaamb,Radford,Radford,Highlanders,,radf,RAD,observed
+ncaamb:SELOU,ncaamb,Southeastern Louisiana,Southeastern Louisiana,Lions,,selou,SELA,observed
+ncaamb:SHC,ncaamb,Spring Hill,Spring Hill,Badgers,,shc,SHC,observed
+ncaamb:SHEN,ncaamb,Shenandoah,Shenandoah,Hornets,,shen,SHEN,observed
+ncaamb:SJBK,ncaamb,St. Joseph's (BKN),St. Joseph's (BKN),Bears,,sjbk,SJBK,observed
+ncaamb:STILL,ncaamb,Stillman,Stillman,Tigers,,still,STILL,observed
+ncaamb:SUNO,ncaamb,SUNO,SUNO,Knights,,suno,,observed
+ncaamb:SYRA,ncaamb,Syracuse,Syracuse,Orange,,syra,SYR,observed
+ncaamb:TMRT,ncaamb,UT Martin,UT Martin,Skyhawks,,tmrt,UTM,observed
+ncaamb:UCCS,ncaamb,UC-Colorado Springs,UC-Colorado Springs,Mountain Lions,,uccs,UCCS,observed
+ncaamb:UCIRV,ncaamb,UC Irvine,UC Irvine,Anteaters,,ucirv,UCI,observed
+ncaamb:UCM,ncaamb,UC Merced,UC Merced,Bobcats,,ucm,UCM,observed
+ncaamb:UFTL,ncaamb,Fort Lauderdale,Fort Lauderdale,Eagles,,uftl,UFTL,observed
+ncaamb:UMA,ncaamb,Maine-Augusta,Maine-Augusta,Moose,,uma,UMA,observed
+ncaamb:UNIC,ncaamb,Union (KY),Union (KY),Bulldogs,,unic,UNIC,observed
+ncaamb:UTIC,ncaamb,Utica,Utica,Pioneers,,utic,UTIC,observed
+ncaamb:VAMIL,ncaamb,VMI,VMI,Keydets,,vamil,,observed
+ncaamb:VERM,ncaamb,Vermont,Vermont,Catamounts,,verm,UVM,observed
+ncaamb:VUL,ncaamb,Virginia-Lynchburg,Virginia-Lynchburg,Dragons,,vul,VUL,observed
+ncaamb:WAG,ncaamb,Wagner,Wagner,Seahawks,,wag,WAG,observed
+ncaamb:WASHST,ncaamb,Washington State,Washington State,Cougars,,washst,WSU,observed
+ncaamb:WC2,ncaamb,Wilson College,Wilson College,Phoenix,,wc2,WC,observed
+ncaamb:WEBST,ncaamb,Weber State,Weber State,Wildcats,,webst,WEB,observed
+ncaamb:WISC,ncaamb,Wisconsin,Wisconsin,Badgers,,wisc,WIS,observed
+ncaamb:WKENT,ncaamb,Western Kentucky,Western Kentucky,Hilltoppers,,wkent,WKU,observed
+ncaamb:WPAT,ncaamb,William Paterson,William Paterson,Pioneers,,wpat,WPAT,observed
