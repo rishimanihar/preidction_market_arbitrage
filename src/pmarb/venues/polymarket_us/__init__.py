@@ -1,4 +1,4 @@
-"""Polymarket US public REST adapter."""
+"""Polymarket US retail venue integration (public REST adapter)."""
 
 from pmarb.venues.polymarket_us.rest import PolymarketUSAdapter
 
