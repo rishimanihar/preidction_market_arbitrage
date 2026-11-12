@@ -479,6 +479,7 @@ Starts only after the M3 evidence review **and** your explicit approval of a sep
 | D22 | Data in gitignored `./data`, private use only, never public; cross-venue analytics is not treated as benchmarking | active (user) |
 | D23 | Two test tiers: synthetic in CI, `localdata` local only | active (user) |
 | D24 | No accounts yet (M1 keyless); long runs later on the user's own machine; agents build, Rishi reviews PRs | active (user) |
+| D25 | Storage stays local (SQLite + compressed files) through M1. Cloud sync is deferred to M2/M3: summary tables to a managed Postgres, raw logs to private object storage. All storage access goes through `storage/` interfaces so the switch is cheap. | active |
 
 ## 13. Changes in v1.1 (from review)
 
