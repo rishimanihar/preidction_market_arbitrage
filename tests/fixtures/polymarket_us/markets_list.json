@@ -1,0 +1,260 @@
+{
+  "markets": [
+    {
+      "id": "900101",
+      "slug": "aec-nfl-ccc-ddd-2030-01-13",
+      "question": "Synthetic winner: Team Gamma",
+      "title": "Team Gamma",
+      "titleShort": "Team Gamma",
+      "subtitle": "",
+      "description": "Synthetic rules for Team Gamma. The market resolves on the final result of the synthetic game. If the game goes to overtime, the result is the final score after overtime. If the game ends in a tie, both sides settle at $0.50.",
+      "category": "sports",
+      "eventSubcategory": "FOOTBALL",
+      "active": true,
+      "closed": false,
+      "archived": false,
+      "hidden": false,
+      "status": "MARKET_STATUS_OPEN",
+      "ep3Status": "OPEN",
+      "marketSides": [
+        {
+          "id": "9001011",
+          "marketId": 900101,
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "aec-nfl-ccc-ddd-2030-01-13",
+          "description": "Team Gamma",
+          "long": true,
+          "tradable": true,
+          "price": "0.5100",
+          "quote": {
+            "value": "0.5100",
+            "currency": "USD"
+          }
+        },
+        {
+          "id": "9001012",
+          "marketId": 900101,
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "aec-nfl-ccc-ddd-2030-01-13",
+          "description": "Other side",
+          "long": false,
+          "tradable": true,
+          "price": "0.480",
+          "quote": {
+            "value": "0.480",
+            "currency": "USD"
+          }
+        }
+      ],
+      "startDate": "2030-01-01T00:00:00Z",
+      "startTime": "2030-01-06T00:00:00Z",
+      "endDate": "2030-01-14T00:00:00Z",
+      "createdAt": "2030-01-01T00:01:00Z",
+      "updatedAt": "2030-01-02T00:00:00Z",
+      "ep3SyncedAt": "2030-01-01T12:00:00Z",
+      "sportsMarketType": "football_team_full_game_winner",
+      "marketType": "moneyline",
+      "orderPriceMinTickSize": 0.01,
+      "minimumTradeQty": 1,
+      "comboEnabled": false,
+      "feeCoefficient": 0.095,
+      "outcomes": "[\"Team Alpha\",\"Other side\"]",
+      "outcomePrices": "[\"0.1200\",\"0.8800\"]",
+      "tags": [],
+      "politics": null,
+      "assetPriceTerms": null
+    },
+    {
+      "id": "900102",
+      "slug": "aec-nfl-eee-fff-2030-01-06",
+      "question": "Synthetic winner: Team Delta",
+      "title": "Team Delta",
+      "titleShort": "Team Delta",
+      "subtitle": "",
+      "description": "Synthetic rules for Team Delta. The market resolves on the final result of the synthetic game. If the game goes to overtime, the result is the final score after overtime. If the game ends in a tie, both sides settle at $0.50.",
+      "category": "sports",
+      "eventSubcategory": "FOOTBALL",
+      "active": true,
+      "closed": true,
+      "archived": false,
+      "hidden": false,
+      "status": "MARKET_STATUS_RESOLVED",
+      "ep3Status": "EXPIRED",
+      "marketSides": [
+        {
+          "id": "9001021",
+          "marketId": 900102,
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "aec-nfl-eee-fff-2030-01-06",
+          "description": "Team Delta",
+          "long": true,
+          "tradable": true,
+          "price": "0.0000",
+          "quote": {
+            "value": "0.0000",
+            "currency": "USD"
+          }
+        },
+        {
+          "id": "9001022",
+          "marketId": 900102,
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "aec-nfl-eee-fff-2030-01-06",
+          "description": "Other side",
+          "long": false,
+          "tradable": true,
+          "price": "1.000",
+          "quote": {
+            "value": "1.000",
+            "currency": "USD"
+          }
+        }
+      ],
+      "startDate": "2030-01-01T00:00:00Z",
+      "startTime": "2030-01-06T00:00:00Z",
+      "endDate": "2030-01-06T00:00:00Z",
+      "createdAt": "2030-01-01T00:01:00Z",
+      "updatedAt": "2030-01-02T00:00:00Z",
+      "ep3SyncedAt": "2030-01-01T12:00:00Z",
+      "sportsMarketType": "football_team_full_game_winner",
+      "marketType": "moneyline",
+      "orderPriceMinTickSize": 0.01,
+      "minimumTradeQty": 1,
+      "comboEnabled": false,
+      "feeCoefficient": 0.095,
+      "outcomes": "[\"Team Alpha\",\"Other side\"]",
+      "outcomePrices": "[\"0.1200\",\"0.8800\"]",
+      "tags": [],
+      "politics": null,
+      "assetPriceTerms": null
+    },
+    {
+      "id": "900103",
+      "slug": "cmb-synthetic-2030-01-20-ggg",
+      "question": "Synthetic winner: Synthetic combo leg",
+      "title": "Synthetic combo leg",
+      "titleShort": "Synthetic combo leg",
+      "subtitle": "",
+      "description": "Synthetic rules for Synthetic combo leg. The market resolves on the final result of the synthetic game. If the game goes to overtime, the result is the final score after overtime. If the game ends in a tie, both sides settle at $0.50.",
+      "category": "sports",
+      "eventSubcategory": "FOOTBALL",
+      "active": true,
+      "closed": false,
+      "archived": false,
+      "hidden": false,
+      "status": "MARKET_STATUS_OPEN",
+      "ep3Status": "OPEN",
+      "marketSides": [
+        {
+          "id": "9001031",
+          "marketId": 900103,
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "cmb-synthetic-2030-01-20-ggg",
+          "description": "Synthetic combo leg",
+          "long": true,
+          "tradable": true,
+          "price": "0.3300",
+          "quote": {
+            "value": "0.3300",
+            "currency": "USD"
+          }
+        },
+        {
+          "id": "9001032",
+          "marketId": 900103,
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "cmb-synthetic-2030-01-20-ggg",
+          "description": "Other side",
+          "long": false,
+          "tradable": true,
+          "price": "0.660",
+          "quote": {
+            "value": "0.660",
+            "currency": "USD"
+          }
+        }
+      ],
+      "startDate": "2030-01-01T00:00:00Z",
+      "startTime": "2030-01-06T00:00:00Z",
+      "endDate": "2030-01-20T00:00:00Z",
+      "createdAt": "2030-01-01T00:01:00Z",
+      "updatedAt": "2030-01-02T00:00:00Z",
+      "ep3SyncedAt": "2030-01-01T12:00:00Z",
+      "sportsMarketType": "football_team_full_game_winner",
+      "marketType": "moneyline",
+      "orderPriceMinTickSize": 0.01,
+      "minimumTradeQty": 1,
+      "comboEnabled": true,
+      "feeCoefficient": 0.095,
+      "outcomes": "[\"Team Alpha\",\"Other side\"]",
+      "outcomePrices": "[\"0.1200\",\"0.8800\"]",
+      "tags": [],
+      "politics": null,
+      "assetPriceTerms": null
+    },
+    {
+      "id": "900104",
+      "slug": "aec-nfl-super-bowl-2030",
+      "question": "Synthetic winner: Synthetic season futures",
+      "title": "Synthetic season futures",
+      "titleShort": "Synthetic season futures",
+      "subtitle": "",
+      "description": "Synthetic futures rules. Resolves on a synthetic season outcome.",
+      "category": "sports",
+      "eventSubcategory": "FOOTBALL",
+      "active": true,
+      "closed": false,
+      "archived": false,
+      "hidden": false,
+      "status": "MARKET_STATUS_OPEN",
+      "ep3Status": "OPEN",
+      "marketSides": [
+        {
+          "id": "9001041",
+          "marketId": 900104,
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "aec-nfl-super-bowl-2030",
+          "description": "Synthetic season futures",
+          "long": true,
+          "tradable": true,
+          "price": "0.2000",
+          "quote": {
+            "value": "0.2000",
+            "currency": "USD"
+          }
+        },
+        {
+          "id": "9001042",
+          "marketId": 900104,
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "aec-nfl-super-bowl-2030",
+          "description": "Other side",
+          "long": false,
+          "tradable": true,
+          "price": "0.800",
+          "quote": {
+            "value": "0.800",
+            "currency": "USD"
+          }
+        }
+      ],
+      "startDate": "2030-01-01T00:00:00Z",
+      "startTime": "2030-01-06T00:00:00Z",
+      "endDate": "2030-02-07T00:00:00Z",
+      "createdAt": "2030-01-01T00:01:00Z",
+      "updatedAt": "2030-01-02T00:00:00Z",
+      "ep3SyncedAt": "2030-01-01T12:00:00Z",
+      "sportsMarketType": "futures",
+      "marketType": "futures",
+      "orderPriceMinTickSize": 0.01,
+      "minimumTradeQty": 1,
+      "comboEnabled": false,
+      "feeCoefficient": 0.095,
+      "outcomes": "[\"Team Alpha\",\"Other side\"]",
+      "outcomePrices": "[\"0.1200\",\"0.8800\"]",
+      "tags": [],
+      "politics": null,
+      "assetPriceTerms": null
+    }
+  ]
+}
