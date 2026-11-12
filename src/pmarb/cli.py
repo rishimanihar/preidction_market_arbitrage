@@ -9,11 +9,14 @@ import subprocess
 import sys
 import tempfile
 from contextlib import closing
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import ValidationError
 
 from pmarb import __version__
+from pmarb.analysis.metrics import build_metrics
+from pmarb.analysis.report import render_report
 from pmarb.config import Settings, load_settings
 from pmarb.secrets import SecretPolicyError, check_key_file
 from pmarb.storage.db import open_reader
@@ -40,6 +43,83 @@ def _repo_root() -> Path | None:
 def _database_path(data_dir: Path) -> Path:
     """Return the canonical local database path."""
     return data_dir / "pmarb.sqlite"
+
+
+def _report(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    try:
+        settings = load_settings()
+    except (ValidationError, OSError):
+        print("FAIL config: settings are invalid; check the PMARB_* configuration", file=sys.stderr)
+        return 1
+    database = args.db.expanduser() if args.db else _database_path(settings.data_dir)
+    try:
+        with closing(open_reader(database)) as conn:
+            metrics = build_metrics(conn, since=args.since, until=args.until)
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        print(f"FAIL report input: {exc}", file=sys.stderr)
+        return 1
+    try:
+        rendered = render_report(metrics, args.format)
+    except (TypeError, ValueError) as exc:
+        print(f"FAIL report rendering: {exc}", file=sys.stderr)
+        return 1
+    if args.out == "-":
+        sys.stdout.write(rendered)
+        return 0
+
+    repo = _repo_root()
+    if args.out is None:
+        output = (
+            settings.data_dir
+            / "reports"
+            / (f"m1-report-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')}.{args.format}")
+        )
+        problems = _check_data_dir(output.parent, repo)
+        if problems:
+            for problem in problems:
+                print(f"FAIL {problem}", file=sys.stderr)
+            return 1
+    else:
+        output = Path(args.out).expanduser()
+    output = Path(os.path.abspath(output))
+    resolved = output.resolve()
+    database_resolved = Path(database).resolve()
+    same_database = resolved == database_resolved
+    if not same_database and resolved.exists() and database_resolved.exists():
+        try:
+            same_database = resolved.samefile(database_resolved)
+        except OSError:
+            same_database = False
+    if same_database:
+        parser.error("report output cannot overwrite the input database")
+    for ancestor in (
+        output.parent,
+        *output.parent.parents,
+        resolved.parent,
+        *resolved.parent.parents,
+    ):
+        if (ancestor / ".git").exists():
+            repo = ancestor
+            break
+    if repo is not None:
+        docs = (repo / "docs").resolve()
+        if (
+            output == repo / "docs"
+            or repo / "docs" in output.parents
+            or resolved == docs
+            or docs in resolved.parents
+        ):
+            parser.error(
+                "reports contain live data and cannot be written under the checkout docs/ directory"
+            )
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(rendered, encoding="utf-8")
+    except OSError as exc:
+        print(f"FAIL could not write report {output}: {exc}", file=sys.stderr)
+        return 1
+    print(output)
+    return 0
 
 
 def _check_data_dir(data_dir: Path, repo_root: Path | None) -> list[str]:
@@ -175,6 +255,14 @@ def main(argv: list[str] | None = None) -> None:
     commands.add_parser("doctor", help="check local configuration and runtime readiness")
     review = commands.add_parser("review", help="launch the local review app")
     review.add_argument("--port", type=int, default=None)
+    report = commands.add_parser("report", help="summarize stored M1 soak data")
+    report.add_argument(
+        "--db", type=Path, default=None, help="SQLite database (default: data dir database)"
+    )
+    report.add_argument("--since", default=None, help="inclusive ISO timestamp lower bound")
+    report.add_argument("--until", default=None, help="inclusive ISO timestamp upper bound")
+    report.add_argument("--format", choices=("md", "json"), default="md")
+    report.add_argument("--out", default=None, help="output path; use - for stdout")
     commands.add_parser("scan", help="scan markets (collector arrives in PR-6)")
     commands.add_parser("replay", help="replay recorded data")
     args = parser.parse_args(argv)
@@ -185,6 +273,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "replay":
         print("not implemented yet (phase 2)")
         raise SystemExit(2)
+    if args.command == "report":
+        raise SystemExit(_report(args, parser))
     if args.command == "review":
         try:
             settings = load_settings()

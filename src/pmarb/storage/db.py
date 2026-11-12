@@ -507,6 +507,12 @@ def _fee_side(result: LegResult | None) -> dict[str, Any] | None:
     return {
         "provenance": result.fee.provenance,
         "conservative_bound": result.fee.conservative_bound,
+        # Retain the actual fills: nonlinear fee scenarios cannot be recovered
+        # from the average acquisition price. Older rows remain readable.
+        "levels_consumed": [
+            {"price": decimal_str(level.price), "size": decimal_str(level.size)}
+            for level in result.levels_consumed
+        ],
     }
 
 
