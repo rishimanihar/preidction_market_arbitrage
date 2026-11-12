@@ -16,6 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 class Venue(StrEnum):
     KALSHI = "kalshi"
     POLYMARKET_US = "polymarket_us"
+    # Lets a group hold three members. Equivalence groups require distinct venues.
+    GEMINI = "gemini"
 
 
 class Side(StrEnum):
@@ -94,9 +96,6 @@ class Market(BaseModel):
 
     ``expected_payout_utc`` is ``None`` when the payout time is unknown.
     ``participants`` are canonical team ids. ``market_key`` is ``venue:market_id``.
-
-    Phase-1 callers may still pass ``outcome_meaning`` and ``fee_metadata``.
-    ``fee_metadata`` is stored on ``fee_meta`` and exposed under the old name.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -120,24 +119,6 @@ class Market(BaseModel):
     url: str | None = None
     raw: dict[str, Any] = Field(default_factory=dict)
 
-    @model_validator(mode="before")
-    @classmethod
-    def _accept_phase1_market(cls, data: object) -> object:
-        if not isinstance(data, dict):
-            return data
-        if "outcome_meaning" not in data and "fee_metadata" not in data:
-            return data
-        payload = dict(data)
-        payload.pop("outcome_meaning", None)
-        legacy_fees = payload.pop("fee_metadata", None)
-        if legacy_fees is not None and "fee_meta" not in payload:
-            if not isinstance(legacy_fees, dict):
-                raise ValueError("fee_metadata must be a dict")
-            payload["fee_meta"] = {str(key): str(value) for key, value in legacy_fees.items()}
-        payload.setdefault("market_type", "")
-        payload.setdefault("rules_hash", "")
-        return payload
-
     @field_validator("line", mode="before")
     @classmethod
     def _no_float(cls, value: object) -> object:
@@ -151,10 +132,6 @@ class Market(BaseModel):
     @property
     def market_key(self) -> str:
         return f"{self.venue}:{self.market_id}"
-
-    @property
-    def fee_metadata(self) -> dict[str, str]:
-        return self.fee_meta
 
 
 class PairReview(BaseModel):
