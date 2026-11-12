@@ -1,5 +1,7 @@
 # Research notes
 
+These notes feed `docs/IMPLEMENTATION_PLAN.md`.
+
 AI-assisted research (Grok workers, reviewed by the orchestrator) feeding the implementation plan. Claims are labeled VERIFIED / INFERRED / UNKNOWN with source links; treat UNKNOWN items as open questions, not facts. Raw API dumps are intentionally not committed (repo is public; Kalshi's developer terms on sharing stored data are unconfirmed).
 
 | File | Topic | Status |

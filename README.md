@@ -14,6 +14,8 @@ python3.12 -m venv .venv
 .venv/bin/ruff check src tests
 ```
 
+The build plan is `docs/IMPLEMENTATION_PLAN.md` (strategy rationale: `plan.md`).
+
 See `CONTRIBUTING.md` for the git workflow and `SECURITY.md` for credential and data rules. Research notes are in `docs/research/`.
 
 `pmarb scan`, `pmarb review`, and `pmarb replay` are reserved for later phases.
