@@ -2,8 +2,11 @@
 
 ``books_atomic`` is true only when every leg is a stream book and the skew
 between those stamps is within the qualified limit. A poll is never atomic.
-A group whose reviewer starts with ``auto:`` cannot be qualified (D27): a
-qualified assessment is rebuilt as indicative.
+Two results stay indicative even when the books are atomic: a reviewer whose
+name starts with ``auto:`` (D27), and a fee quote whose provenance starts
+with ``scenario:``. Both are stored by rebuilding a qualified assessment as
+indicative. The fee quote itself is unchanged, so the scenario provenance
+is what the assessment row records.
 """
 
 from __future__ import annotations
@@ -51,14 +54,23 @@ class AssessmentSnapshot:
 def downgrade_auto_qualified(assessment: OpportunityAssessment) -> OpportunityAssessment:
     """Rebuild a qualified assessment as indicative.
 
-    The copy keeps books, prices, and ``books_atomic``. Only the class changes,
-    which is what D27 allows an ``auto:`` reviewer to store.
+    The copy keeps books, prices, fee quotes, and ``books_atomic``. Only the
+    class changes. An ``auto:`` reviewer (D27) and a ``scenario:`` fee quote
+    both go through here, so the scenario provenance stays on the stored row.
     """
     if assessment.result_class is not AssessmentClass.QUALIFIED:
         return assessment
     data = assessment.model_dump()
     data["result_class"] = AssessmentClass.INDICATIVE
     return OpportunityAssessment.model_validate(data)
+
+
+def _scenario_fee(assessment: OpportunityAssessment) -> bool:
+    """True when either leg was priced with a scenario stand-in."""
+    for result in (assessment.yes_result, assessment.no_result):
+        if result is not None and result.fee.provenance.startswith("scenario:"):
+            return True
+    return False
 
 
 def books_are_atomic(states: Sequence[BookState], skew_limit_s: float) -> bool:
@@ -179,7 +191,7 @@ class Evaluator:
                 limits=limits,
             )
             for assessment in priced:
-                if auto:
+                if auto or _scenario_fee(assessment):
                     assessment = downgrade_auto_qualified(assessment)
                 self._persist(assessment)
                 self._episodes.observe(assessment, opens_episode=True)

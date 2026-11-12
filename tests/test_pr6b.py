@@ -7,6 +7,7 @@ classes with fakes that never open a socket.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sqlite3
 import time
@@ -189,6 +190,7 @@ def _settings(
     review_mode: str = "auto",
     precision: str | None = "0.0001",
     theta: Decimal | None = Decimal("0.075"),
+    fee_scenario: str = "conservative",
 ) -> Settings:
     return Settings(
         _env_file=None,
@@ -196,6 +198,7 @@ def _settings(
         review_mode=review_mode,  # type: ignore[arg-type]
         kalshi_member_precision=precision,  # type: ignore[arg-type]
         polyus_theta=theta,
+        fee_scenario=fee_scenario,  # type: ignore[arg-type]
     )
 
 
@@ -205,9 +208,16 @@ def _pipe(
     review_mode: str = "auto",
     precision: str | None = "0.0001",
     theta: Decimal | None = Decimal("0.075"),
+    fee_scenario: str = "conservative",
 ) -> Pipe:
     clock = FakeClock(mono=MONO, wall=WALL)
-    settings = _settings(tmp_path, review_mode=review_mode, precision=precision, theta=theta)
+    settings = _settings(
+        tmp_path,
+        review_mode=review_mode,
+        precision=precision,
+        theta=theta,
+        fee_scenario=fee_scenario,
+    )
     conn = open_writer(tmp_path / "pmarb.sqlite")
     listed, other = _pair(clock.wall())
     kalshi_venue = FakeKalshi(settings=settings, markets=[listed], clock=clock)
@@ -357,13 +367,14 @@ async def _discover_and_poll(pipe: Pipe) -> None:
 
 
 def test_unknown_fees_reject_with_venue_reasons(tmp_path) -> None:
+    """``fee_scenario="none"`` leaves an unset account value unknown."""
     market_k, market_p = _pair(WALL)
     known = Settings(
         _env_file=None, kalshi_member_precision="0.0001", polyus_theta=Decimal("0.075")
     )
-    missing_precision = Settings(_env_file=None, polyus_theta=Decimal("0.075"))
-    missing_theta = Settings(_env_file=None, kalshi_member_precision="0.0001")
-    missing_both = Settings(_env_file=None)
+    missing_precision = Settings(_env_file=None, polyus_theta=Decimal("0.075"), fee_scenario="none")
+    missing_theta = Settings(_env_file=None, kalshi_member_precision="0.0001", fee_scenario="none")
+    missing_both = Settings(_env_file=None, fee_scenario="none")
 
     only_kalshi = _quote(missing_precision, market_k, market_p)[0]
     assert "fee_unknown_kalshi" in only_kalshi.reasons
@@ -384,8 +395,14 @@ def test_unknown_fees_reject_with_venue_reasons(tmp_path) -> None:
     sample = _quote(known, market_k, market_p)[0]
     assert sample.result_class is AssessmentClass.QUALIFIED
     assert sample.net_profit is not None
+    for result in (sample.yes_result, sample.no_result):
+        assert result is not None
+        assert not result.fee.provenance.startswith("scenario:")
+    texts = tuple(result.fee.provenance for result in (sample.yes_result, sample.no_result))
+    assert any("precision=0.0001" in text for text in texts)
+    assert any("theta=0.075" in text for text in texts)
 
-    pipe = _pipe(tmp_path, precision=None, theta=Decimal("0.075"))
+    pipe = _pipe(tmp_path, precision=None, theta=Decimal("0.075"), fee_scenario="none")
     try:
         asyncio.run(_discover_and_poll(pipe))
         assert pipe.assessments()
@@ -393,6 +410,192 @@ def test_unknown_fees_reject_with_venue_reasons(tmp_path) -> None:
         assert pipe.episodes() == []
     finally:
         pipe.conn.close()
+
+
+async def test_conservative_scenario_prices_and_opens_episodes(tmp_path) -> None:
+    pipe = _pipe(tmp_path, precision=None, theta=None)
+    try:
+        await pipe.discover()
+        await pipe.poll()
+        rows = pipe.assessments()
+        assert rows
+        assert {row[0] for row in rows} == {"indicative"}
+        assert all(row[2] is not None for row in rows)
+        assert all("fee_unknown" not in str(row[1]) for row in rows)
+        stored = pipe.conn.execute("SELECT fee_provenance_json FROM assessments").fetchall()
+        for (raw,) in stored:
+            provenance = json.loads(raw)
+            for side in ("yes", "no"):
+                details = provenance[side]
+                assert details["provenance"].startswith("scenario:conservative; ")
+                assert details["conservative_bound"] is True
+        assert pipe.episodes()
+        assert {row[0] for row in pipe.episodes()} == {"indicative"}
+    finally:
+        pipe.conn.close()
+
+
+def test_scenario_fee_never_qualifies(tmp_path) -> None:
+    both = tmp_path / "both"
+    one = tmp_path / "kalshi"
+    both.mkdir()
+    one.mkdir()
+    _assert_scenario_stays_indicative(both, precision=None, theta=None, prefixed_sides=2)
+    _assert_scenario_stays_indicative(one, precision=None, theta=Decimal("0.075"), prefixed_sides=1)
+
+
+def test_missing_multiplier_stays_unknown_in_every_fee_scenario() -> None:
+    market_k, market_p = _pair(WALL)
+    bare = market_k.model_copy(update={"fee_meta": {}})
+    levels = [Level(price=Decimal("0.40"), size=Decimal(1))]
+    for scenario in ("conservative", "none"):
+        settings = Settings(
+            _env_file=None,
+            fee_scenario=scenario,  # type: ignore[arg-type]
+            polyus_theta=Decimal("0.075"),
+        )
+        quote = _fee_model(Venue.KALSHI, settings, bare).taker_fee(levels, Side.YES)
+        assert quote.amount is None
+        assert not quote.provenance.startswith("scenario:")
+        priced = _quote(settings, bare, market_p)
+        assert priced
+        assert all("fee_unknown_kalshi" in item.reasons for item in priced)
+        assert all("fee_unknown_polymarket_us" not in item.reasons for item in priced)
+        assert all(item.result_class is AssessmentClass.REJECTED for item in priced)
+
+
+def test_conservative_scenario_bounds_the_account_schedules() -> None:
+    market_k, market_p = _pair(WALL)
+    unset = Settings(_env_file=None)
+    ladders = (
+        [Level(price=Decimal("0.45"), size=Decimal(100))],
+        [
+            Level(price=Decimal("0.10"), size=Decimal(1)),
+            Level(price=Decimal("0.20"), size=Decimal(1)),
+        ],
+        [Level(price=Decimal("0.50"), size=Decimal("0.2079"))],
+        [Level(price=Decimal("0.33"), size=Decimal(3))],
+        [Level(price=Decimal("0.20"), size=Decimal(1))],
+        [Level(price=Decimal("0.20"), size=Decimal(10))],
+        [Level(price=Decimal("0.20"), size=Decimal(100))],
+        [
+            Level(price=Decimal("0.40"), size=Decimal(10)),
+            Level(price=Decimal("0.55"), size=Decimal(3)),
+        ],
+    )
+    scenario_k = _fee_model(Venue.KALSHI, unset, market_k)
+    direct_k = _fee_model(
+        Venue.KALSHI,
+        Settings(_env_file=None, kalshi_member_precision="0.0001"),
+        market_k,
+    )
+    configured_coarse = _fee_model(
+        Venue.KALSHI,
+        Settings(_env_file=None, kalshi_member_precision="0.01"),
+        market_k,
+    )
+    for levels in ladders:
+        coarse = scenario_k.taker_fee(levels, Side.YES)
+        fine = direct_k.taker_fee(levels, Side.YES)
+        real_coarse = configured_coarse.taker_fee(levels, Side.YES)
+        assert coarse.amount is not None
+        assert fine.amount is not None
+        assert real_coarse.amount is not None
+        assert coarse.amount >= fine.amount
+        assert coarse.amount == real_coarse.amount
+        assert coarse.provenance.startswith("scenario:conservative; ")
+        assert "precision=0.01" in coarse.provenance
+        assert coarse.conservative_bound is True
+        assert not fine.provenance.startswith("scenario:")
+        assert not real_coarse.provenance.startswith("scenario:")
+
+    scenario_p = _fee_model(Venue.POLYMARKET_US, unset, market_p)
+    by_theta = {
+        theta: _fee_model(
+            Venue.POLYMARKET_US,
+            Settings(_env_file=None, polyus_theta=theta),
+            market_p,
+        )
+        for theta in (
+            Decimal("0.095"),
+            Decimal("0.085"),
+            Decimal("0.075"),
+            Decimal("0.0695"),
+        )
+    }
+    for levels in ladders:
+        high = scenario_p.taker_fee(levels, Side.NO)
+        assert high.amount is not None
+        assert high.provenance.startswith("scenario:conservative; ")
+        assert "theta=0.095" in high.provenance
+        assert high.conservative_bound is True
+        for theta, model in by_theta.items():
+            other = model.taker_fee(levels, Side.NO)
+            assert other.amount is not None
+            assert high.amount >= other.amount
+            assert not other.provenance.startswith("scenario:")
+            if theta == Decimal("0.095"):
+                assert other.amount == high.amount
+
+
+def _assert_scenario_stays_indicative(
+    tmp_path,
+    *,
+    precision: str | None,
+    theta: Decimal | None,
+    prefixed_sides: int,
+) -> None:
+    pipe = _pipe(tmp_path, precision=precision, theta=theta)
+    try:
+        _, _, human_k, human_p = _stream_markets()
+        group = _approved("human-scenario", "ada", human_k, human_p)
+        _prime_stream(pipe, group, (human_k, human_p))
+        asyncio.run(pipe.evaluator.on_books_updated({group.group_id}))
+        rows = pipe.conn.execute(
+            'SELECT "class", books_atomic, fee_provenance_json, net_profit FROM assessments'
+        ).fetchall()
+        assert rows
+        assert {row[0] for row in rows} == {"indicative"}
+        assert all(row[1] == 1 and row[3] is not None for row in rows)
+        for row in rows:
+            provenance = json.loads(row[2])
+            texts = [provenance[side]["provenance"] for side in ("yes", "no")]
+            prefixed = [text for text in texts if text.startswith("scenario:conservative; ")]
+            assert len(prefixed) == prefixed_sides
+            for side in ("yes", "no"):
+                if provenance[side]["provenance"].startswith("scenario:"):
+                    assert provenance[side]["conservative_bound"] is True
+            if prefixed_sides == 2:
+                assert any("precision=0.01" in text for text in texts)
+                assert any("theta=0.095" in text for text in texts)
+            else:
+                assert any(
+                    text.startswith("scenario:conservative; ") and "precision=0.01" in text
+                    for text in texts
+                )
+                assert any(
+                    "theta=0.075" in text and not text.startswith("scenario:") for text in texts
+                )
+        assert pipe.episodes()
+        assert {row[0] for row in pipe.episodes()} == {"indicative"}
+    finally:
+        pipe.conn.close()
+
+
+def _prime_stream(pipe: Pipe, group: EquivalenceGroup, markets: tuple[Market, Market]) -> None:
+    pipe.registry.groups[group.group_id] = group
+    for market in markets:
+        pipe.registry.markets[market.market_key] = market
+        book = _book(market.venue, market.market_id, Decimal("0.20"), MONO, WALL)
+        meta = BookMeta(
+            received_mono=MONO,
+            received_wall=WALL,
+            connection_generation=0,
+            source="stream",
+            cached=False,
+        )
+        assert pipe.collector.store.put(book, meta)
+    pipe.evaluator._opens = lambda _group_id: True
 
 
 async def test_edge_opens_an_indicative_episode_then_disqualifies(tmp_path) -> None:

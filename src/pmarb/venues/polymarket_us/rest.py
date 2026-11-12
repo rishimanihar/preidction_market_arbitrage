@@ -6,11 +6,13 @@ import asyncio
 import time
 from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any, Self
 from urllib.parse import quote
 
 from pmarb.config import Settings
 from pmarb.fees.polymarket_us import PolymarketUSFeeModel
+from pmarb.fees.scenario import POLYUS_CONSERVATIVE_THETA, account_fee_value, with_scenario
 from pmarb.http import ObservationHttpClient
 from pmarb.models import Book, Market, Venue
 from pmarb.protocols import BookEvent, FeeModel
@@ -155,15 +157,22 @@ class PolymarketUSAdapter:
             await self.http.aclose()
 
     def fee_model(self, market: Market) -> FeeModel:
-        """Account Θ from settings. Unset Θ leaves the quote unknown.
+        """Account Θ from settings.
 
         ``market`` is unused: Polymarket US fees follow the account tier, not
-        the market's ``feeCoefficient``. Unknown Θ is scenario-only
-        (``fee_unknown_polymarket_us``).
+        the market's ``feeCoefficient``. Unset Θ uses ``0.095`` when
+        ``fee_scenario`` is ``conservative``, and that quote is prefixed as a
+        scenario bound. ``fee_scenario="none"`` leaves unset Θ unknown.
         """
         del market
-        theta = None if self._settings is None else self._settings.polyus_theta
-        return PolymarketUSFeeModel(theta=theta)
+        theta, scenario = _theta(self._settings)
+        return with_scenario(PolymarketUSFeeModel(theta=theta), scenario)
+
+
+def _theta(settings: Settings | None) -> tuple[Decimal | None, bool]:
+    scenario = None if settings is None else settings.fee_scenario
+    configured = None if settings is None else settings.polyus_theta
+    return account_fee_value(scenario, configured, POLYUS_CONSERVATIVE_THETA)
 
 
 def _utc(value: datetime) -> datetime:

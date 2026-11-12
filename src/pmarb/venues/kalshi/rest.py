@@ -11,6 +11,11 @@ from urllib.parse import quote
 
 from pmarb.config import Settings
 from pmarb.fees.kalshi import KalshiFeeModel
+from pmarb.fees.scenario import (
+    KALSHI_CONSERVATIVE_PRECISION,
+    account_fee_value,
+    with_scenario,
+)
 from pmarb.http import ObservationHttpClient
 from pmarb.models import Book, Market, Venue
 from pmarb.protocols import BookEvent, FeeModel
@@ -213,19 +218,26 @@ class KalshiAdapter:
     def fee_model(self, market: Market) -> FeeModel:
         """Series multiplier from ``fee_meta``; member precision from settings.
 
-        Either one missing leaves the quote unknown. Assessments then stay
-        scenario-only (``fee_unknown_kalshi``) instead of assuming a schedule.
+        A missing series multiplier leaves the quote unknown in every mode.
+        Unset precision uses the non-direct ``0.01`` grid when
+        ``fee_scenario`` is ``conservative``, and that quote is prefixed as a
+        scenario bound. ``fee_scenario="none"`` leaves unset precision unknown.
         """
-        return KalshiFeeModel(
-            multiplier=_fee_multiplier(market),
-            precision=_member_precision(self._settings),
+        precision, scenario = _member_precision(self._settings)
+        return with_scenario(
+            KalshiFeeModel(multiplier=_fee_multiplier(market), precision=precision),
+            scenario,
         )
 
 
-def _member_precision(settings: Settings | None) -> Decimal | None:
-    if settings is None or settings.kalshi_member_precision is None:
-        return None
-    return Decimal(settings.kalshi_member_precision)
+def _member_precision(settings: Settings | None) -> tuple[Decimal | None, bool]:
+    configured = None
+    scenario = None
+    if settings is not None:
+        scenario = settings.fee_scenario
+        if settings.kalshi_member_precision is not None:
+            configured = Decimal(settings.kalshi_member_precision)
+    return account_fee_value(scenario, configured, KALSHI_CONSERVATIVE_PRECISION)
 
 
 def _fee_multiplier(market: Market) -> Decimal | None:

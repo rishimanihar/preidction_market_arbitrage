@@ -46,9 +46,11 @@ class Settings(BaseSettings):
         default=None, validation_alias=_alias("POLYUS_PRIVATE_KEY_PATH")
     )
 
-    # Fee parameters: unset means scenario-only (never assume a value).
+    # Fee parameters. A configured value is the account's. Unset stays unknown
+    # when fee_scenario is "none", and otherwise uses the conservative stand-in.
     kalshi_member_precision: Literal["0.0001", "0.01"] | None = None
     polyus_theta: Decimal | None = None
+    fee_scenario: Literal["conservative", "none"] = "conservative"
 
     # Polling
     max_polled_groups: int = Field(default=8, ge=1)
@@ -102,6 +104,13 @@ class Settings(BaseSettings):
     def _review_mode(cls, v: object) -> object:
         if v is None or v == "":
             return "auto"
+        return v
+
+    @field_validator("fee_scenario", mode="before")
+    @classmethod
+    def _fee_scenario(cls, v: object) -> object:
+        if v is None or v == "":
+            return "conservative"
         return v
 
     @field_validator("polyus_theta", mode="before")

@@ -36,6 +36,7 @@ def test_defaults_match_plan() -> None:
     assert s.max_polled_groups == 8 and s.stream_max_age_s == 2.0
     assert s.skew_indicative_s == 1.0 and s.skew_qualified_s == 0.25
     assert s.review_mode == "auto"
+    assert s.fee_scenario == "conservative"
     assert s.discovery_interval_s == 900.0
 
 
@@ -73,6 +74,19 @@ def test_theta_allowed(theta: str, monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize("theta", ["0.07", "0.1", "abc"])
 def test_theta_rejected(theta: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PMARB_POLYUS_THETA", theta)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_fee_scenario_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PMARB_FEE_SCENARIO", "none")
+    assert Settings(_env_file=None).fee_scenario == "none"
+    monkeypatch.setenv("PMARB_FEE_SCENARIO", "")
+    assert Settings(_env_file=None).fee_scenario == "conservative"
+
+
+def test_fee_scenario_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PMARB_FEE_SCENARIO", "optimistic")
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
 
