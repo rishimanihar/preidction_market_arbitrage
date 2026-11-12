@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     )
 
     data_dir: Path = Path("./data")
+    review_port: int = Field(default=8501, ge=1, le=65535)
 
     kalshi_api_key_id: SecretStr | None = Field(
         default=None, validation_alias=_alias("KALSHI_API_KEY_ID")
