@@ -1060,7 +1060,9 @@ async def test_shutdown_drains_and_reports_gap(tmp_path) -> None:
     assert writer.pending == 0
     with closing(open_reader(db_path)) as conn:
         kinds = [row[0] for row in conn.execute("SELECT kind FROM collector_events ORDER BY id")]
-    assert [kind for kind in kinds if kind != "timing"] == ["collector_shutdown"]
+    # Startup records each venue's book source (no keys here, so both poll).
+    assert kinds[:2] == ["stream_mode", "stream_mode"]
+    assert [kind for kind in kinds[2:] if kind != "timing"] == ["collector_shutdown"]
     assert "timing" in kinds
 
 

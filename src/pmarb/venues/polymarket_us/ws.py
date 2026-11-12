@@ -4,6 +4,13 @@ Only the camelCase/string-enum schema from the Markets WebSocket channel page
 is accepted. The overview page documents a conflicting snake_case/numeric form;
 frames in that form are counted and rejected until a captured frame changes the
 pin deliberately.
+
+The docs say a snapshot carries the "top levels" but never publish N. Until a
+captured frame confirms the depth, each streamed book stays valid (it is the
+venue's own snapshot) but ``raw_native["depth_unconfirmed"]`` is ``True``. The
+evaluator never treats such a leg as atomic, so its results are indicative and
+never qualified. ``depth_confirmed=True`` (config
+``polyus_ws_depth_confirmed``) lifts the tag once that capture exists.
 """
 
 from __future__ import annotations
@@ -73,6 +80,7 @@ class PolyUSMarketStream:
         heartbeat_timeout_s: float = HEARTBEAT_TIMEOUT_S,
         maintenance_check_interval_s: float = MAINTENANCE_CHECK_INTERVAL_S,
         backoff: Backoff | None = None,
+        depth_confirmed: bool = False,
     ) -> None:
         if not key_id:
             raise ValueError("key_id must be non-empty")
@@ -91,6 +99,7 @@ class PolyUSMarketStream:
         self._heartbeat_timeout_s = heartbeat_timeout_s
         self._maintenance_check_interval_s = maintenance_check_interval_s
         self._backoff = backoff or Backoff()
+        self._depth_confirmed = bool(depth_confirmed)
         self._closing = False
         self._maintenance_interrupt = False
         self._iterator: AsyncIterator[BookEvent] | None = None
@@ -359,22 +368,21 @@ class PolyUSMarketStream:
 
         bid_count = len(data.get("bids", [])) if isinstance(data.get("bids"), list) else 0
         offer_count = len(data.get("offers", [])) if isinstance(data.get("offers"), list) else 0
+        unconfirmed = not self._depth_confirmed
         depth = {
             "bid_levels": bid_count,
             "offer_levels": offer_count,
             "total_levels": bid_count + offer_count,
-            "depth_unconfirmed": True,
+            "depth_unconfirmed": unconfirmed,
         }
         self.metrics["depth_levels"][slug] = depth["total_levels"]
         self.metrics["depth_messages"] += 1
         raw_native = dict(book.raw_native or {})
         raw_native["depth"] = depth
-        update: dict[str, Any] = {"raw_native": raw_native}
-        if book.valid:
-            # The docs say "top levels" but don't publish N. Until a captured
-            # frame confirms depth, a stream snapshot cannot qualify.
-            update.update(valid=False, invalid_reason="depth_unconfirmed")
-        book = book.model_copy(update=update)
+        # The book stays valid. The tag keeps it out of atomic (qualified)
+        # results until a captured frame confirms how many levels arrive.
+        raw_native["depth_unconfirmed"] = unconfirmed
+        book = book.model_copy(update={"raw_native": raw_native})
         self._last_books[slug] = book
         return [
             BookEvent(kind="snapshot", book=book, market_id=slug, venue=self.venue, reason=None)

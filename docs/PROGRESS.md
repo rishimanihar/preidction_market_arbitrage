@@ -21,6 +21,7 @@ _Last updated: 2026-11-12 14:08 CST_
 | `m1/integration` | Everything merged and reconciled (report ported to the PR-1 fee models) | pushed |
 | `m1/livefix` | Profile and fix discovery slowness and backpressure (Codex) | in progress |
 | `m1/deploy` | launchd/systemd templates, install script, clock check (Codex) | in progress |
+| `m2/stream-integration` | M2-D: streams wired into the collector (per-venue stream/poll mode, REST fallback, atomic qualification); stacked on `m1/integration` + #14 + #15 | PR open, needs keys to verify live |
 
 ## Learned since plan v1.1
 
@@ -65,7 +66,11 @@ _Last updated: 2026-11-12 14:08 CST_
 2. **Windows support** (`m1/windows`, Grok xhigh, paused mid-task at 14:08). The worktree `/Users/avynarra/Documents/pmarb-worktrees/windows` holds partial uncommitted work. The brief is `/Users/avynarra/Documents/pmarb-worktrees/briefs/windows.md`. Resume by re-running it (tell the worker to review the existing changes first), then review, push, and confirm the Windows CI job passes.
 3. **Start the real soak.** Run `pmarb scan` across an evening slate. Short term: this Mac with `caffeinate -is`. Long term: Rishi's Windows desktop, via `docs/RUN_ON_WINDOWS.md` once it lands. Then run `pmarb report`.
 4. **Open the integration PR** (`m1/integration` → `main`) once Rishi has reviewed the stacked PRs, or let him merge the stack in order.
-5. **M2:** wire the streams into the collector. Change `depth_unconfirmed` to valid + non-atomic. This needs API keys.
+5. **M2:** streams are wired into the collector on `m2/stream-integration` (M2-D), tested only with fake streams. `depth_unconfirmed` is now valid + non-atomic, lifted by `polyus_ws_depth_confirmed`. With keys:
+   - capture real frames from both venues; confirm Polymarket US depth N and field casing before setting `PMARB_POLYUS_WS_DEPTH_CONFIRMED=true`;
+   - run forced-disconnect checks (fallback after 5 s, recovery after 10 s stable), then the 7-day stability run;
+   - measure how often quiet in-game markets go stale under the 2 s stream age (deltas only arrive on change);
+   - watch how often resubscribing (a new live game) closes episodes, since a restart is break-before-make.
 6. **Users:** create venue accounts and read keys. Rishi turns on secret scanning and protects `main`.
 7. **Codex is off for the rest of the week** (user request). Use Grok and Claude subagents only.
 

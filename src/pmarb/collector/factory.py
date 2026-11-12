@@ -1,13 +1,18 @@
-"""Build the M1 collector: adapters, writers, discovery, review, evaluator, episodes.
+"""Build the collector: adapters, streams, writers, discovery, review, evaluator, episodes.
 
 The database file is ``<data_dir>/pmarb.sqlite``. Startup closes episodes left
 open by the previous process with ``collector_restart`` before the writer
 thread opens the file.
+
+Each venue streams when its key id and key file are configured and the key
+file passes the secrets policy (:func:`pmarb.collector.streams.select_venue_modes`);
+otherwise it polls REST. The choice is a ``stream_mode`` collector event.
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from pathlib import Path
 
 from pmarb.collector.books import BookStore
@@ -19,8 +24,10 @@ from pmarb.collector.persist import WriteSink
 from pmarb.collector.registry import Registry, read_human_rejects, read_registry
 from pmarb.collector.review_mode import ReviewMode
 from pmarb.collector.runtime import Collector
+from pmarb.collector.streams import VenueMode, select_venue_modes
 from pmarb.config import Settings
 from pmarb.http import ObservationHttpClient
+from pmarb.models import Venue
 from pmarb.protocols import VenueAdapter
 from pmarb.storage.db import DbWriterTask, open_writer
 from pmarb.storage.rawlog import Envelope, RawLogTask, RawLogWriter
@@ -35,14 +42,19 @@ def build_collector(
     kalshi: VenueAdapter | None = None,
     polyus: VenueAdapter | None = None,
     install_signals: bool = True,
+    venue_modes: Mapping[Venue, VenueMode] | None = None,
+    key_repo_root: Path | None = None,
 ) -> Collector:
-    """Wire a collector that discovers, reviews, polls, and evaluates.
+    """Wire a collector that discovers, reviews, polls or streams, and evaluates.
 
     Pass adapters to tests. The default adapters share one observation HTTP
     client and read fee settings from ``settings``. Unset precision or Θ stays
-    scenario-only.
+    scenario-only. ``venue_modes`` replaces the key-based stream selection
+    (tests); ``key_repo_root`` is the checkout the key files must live outside.
     """
     clock = SystemClock() if clock is None else clock
+    if venue_modes is None:
+        venue_modes = select_venue_modes(settings, clock, repo_root=key_repo_root)
     http: ObservationHttpClient | None = None
     if kalshi is None or polyus is None:
         http = ObservationHttpClient(settings)
@@ -132,6 +144,8 @@ def build_collector(
         discovery=discovery,
         on_startup=startup,
         on_stopped=close_http,
+        venue_modes=venue_modes,
+        on_invalidated=tracker.on_markets_invalidated,
     )
     holder.append(collector)
     discovery.bind(collector)

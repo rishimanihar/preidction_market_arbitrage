@@ -65,6 +65,19 @@ class Settings(BaseSettings):
     skew_indicative_s: float = Field(default=1.0, gt=0)
     skew_qualified_s: float = Field(default=0.25, gt=0)
 
+    # Streams (M2). A venue streams only when its key id and key file are set
+    # and the key file passes the secrets policy; otherwise it polls REST.
+    # An unhealthy stream falls back to REST for that venue until it recovers.
+    stream_fallback_after_s: float = Field(default=5.0, gt=0)
+    stream_recovery_s: float = Field(default=10.0, ge=0)
+    stream_health_window_s: float = Field(default=60.0, gt=0)
+    stream_max_schema_failures: int = Field(default=3, ge=1)
+    stream_max_gaps: int = Field(default=3, ge=1)
+    # Polymarket US documents "top levels" without N. Until a captured frame
+    # confirms the depth, streamed books are tagged depth_unconfirmed and can
+    # never be atomic (so never qualified). Set true only after that capture.
+    polyus_ws_depth_confirmed: bool = False
+
     # Rate budgets (requests per second)
     kalshi_books_rps: float = Field(default=3.0, gt=0)
     kalshi_discovery_rps: float = Field(default=3.0, gt=0)

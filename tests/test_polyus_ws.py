@@ -14,6 +14,8 @@ from websockets.datastructures import Headers
 from websockets.exceptions import InvalidStatus
 from websockets.http11 import Response
 
+from pmarb.collector.books import BookMeta, BookState
+from pmarb.collector.evaluator import books_are_atomic, depth_unconfirmed
 from pmarb.economics import LegInput, assess
 from pmarb.http import Backoff
 from pmarb.models import AssessmentClass, FeeQuote, Leg, Level, Side, Venue
@@ -359,7 +361,8 @@ def test_schema_failure_after_snapshot_invalidates_instead_of_reusing_levels():
 
     first, failed = asyncio.run(run())
     assert first.kind == "snapshot" and first.book is not None
-    assert first.book.invalid_reason == "depth_unconfirmed"
+    assert first.book.valid and first.book.invalid_reason is None
+    assert first.book.raw_native["depth_unconfirmed"] is True
     assert failed.kind == "invalidate" and failed.book is None
     assert failed.reason == "schema_failure"
 
@@ -402,10 +405,23 @@ def test_non_string_level_values_are_schema_failures(field):
     assert stream.metrics["schema_failure"] == 1
 
 
-def test_depth_is_recorded_and_marked_unconfirmed():
+def _stream_state(book):
+    return BookState(
+        book=book,
+        meta=BookMeta(
+            received_mono=book.received_monotonic,
+            received_wall=book.received_utc,
+            connection_generation=book.connection_generation,
+            source="stream",
+            cached=False,
+        ),
+    )
+
+
+def _first_book(**kwargs):
     socket = FakeSocket([frame()])
     connect, _ = connector(socket)
-    stream = stream_with(connect)
+    stream = stream_with(connect, **kwargs)
 
     async def run():
         event = await anext(stream)
@@ -413,10 +429,16 @@ def test_depth_is_recorded_and_marked_unconfirmed():
         return event
 
     event = asyncio.run(run())
-    assert event.book is not None
-    assert not event.book.valid
-    assert event.book.invalid_reason == "depth_unconfirmed"
-    assert event.book.raw_native["depth"] == {
+    assert event.kind == "snapshot" and event.book is not None
+    return stream, event.book
+
+
+def test_depth_is_recorded_and_tagged_unconfirmed_but_the_book_stays_valid():
+    stream, book = _first_book()
+    assert book.valid
+    assert book.invalid_reason is None
+    assert book.raw_native["depth_unconfirmed"] is True
+    assert book.raw_native["depth"] == {
         "bid_levels": 1,
         "offer_levels": 1,
         "total_levels": 2,
@@ -424,31 +446,49 @@ def test_depth_is_recorded_and_marked_unconfirmed():
     }
     assert stream.metrics["depth_levels"] == {SLUG: 2}
     assert stream.metrics["depth_messages"] == 1
+    assert depth_unconfirmed(book, depth_confirmed=True)
 
+    # Everything else about the pair is atomic: both streamed, live, no skew.
+    # Even with the config gate lifted, the tag alone keeps it non-atomic.
     kalshi = make_book(
         Venue.KALSHI,
         "synthetic-kalshi",
         [Level(price=Decimal("0.40"), size=Decimal(100))],
         [Level(price=Decimal("0.40"), size=Decimal(100))],
-        received_monotonic=event.book.received_monotonic,
+        received_monotonic=book.received_monotonic,
+        received_utc=book.received_utc,
     )
+    states = [_stream_state(kalshi), _stream_state(book)]
+
+    def live(_venue, _generation):
+        return True
+
+    assert not books_are_atomic(states, Decimal("0.25"), stream_current=live, depth_confirmed=True)
     assessment = assess(
         "synthetic-pair",
         LegInput(
             Leg(venue=Venue.KALSHI, market_id="synthetic-kalshi", side=Side.YES), kalshi, ZeroFee()
         ),
-        LegInput(
-            Leg(venue=Venue.POLYMARKET_US, market_id=SLUG, side=Side.NO), event.book, ZeroFee()
-        ),
-        Decimal(10),
-        now_monotonic=event.book.received_monotonic,
-        now_wall=event.book.received_utc,
+        LegInput(Leg(venue=Venue.POLYMARKET_US, market_id=SLUG, side=Side.NO), book, ZeroFee()),
+        Decimal(1),
+        now_monotonic=book.received_monotonic,
+        now_wall=book.received_utc,
         books_atomic=False,
         exception_risk=False,
         model_version="test",
     )
     assert assessment.result_class is not AssessmentClass.QUALIFIED
-    assert "book_invalid_polymarket_us" in assessment.reasons
+    assert "book_invalid_polymarket_us" not in assessment.reasons
+
+
+def test_confirmed_depth_lifts_the_tag():
+    _, book = _first_book(depth_confirmed=True)
+    assert book.valid
+    assert book.raw_native["depth_unconfirmed"] is False
+    assert book.raw_native["depth"]["depth_unconfirmed"] is False
+    assert not depth_unconfirmed(book, depth_confirmed=True)
+    # The evaluator still gates Polymarket US streams on the config value.
+    assert depth_unconfirmed(book, depth_confirmed=False)
 
 
 def test_market_closed_state_is_invalid_and_cancellation_closes_socket():

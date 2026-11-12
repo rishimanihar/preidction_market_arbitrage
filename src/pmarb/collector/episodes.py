@@ -4,6 +4,8 @@ Indicative and qualified runs are different keys and are never merged.
 A discovery sample does not open an episode: the caller passes
 ``opens_episode=False``. Gaps longer than twice the poll cadence close with
 ``data_gap``. A rejected assessment closes with ``disqualified:<first reason>``.
+A stream invalidation closes the episodes on that market at once
+(:meth:`EpisodeTracker.on_markets_invalidated`).
 """
 
 from __future__ import annotations
@@ -98,6 +100,22 @@ class EpisodeTracker:
             no_key = _leg_key(episode.no_leg)
             if yes_key in market_keys or no_key in market_keys:
                 self._finish(episode, EpisodeTermination.MARKET_CLOSED, None)
+        self.flush()
+
+    def on_markets_invalidated(self, market_keys: set[str], reason: str) -> None:
+        """Close episodes with a leg in ``market_keys`` now: a stream invalidated that book.
+
+        A stream invalidation (disconnect, sequence gap, schema failure, crossed
+        book, ...) breaks the run at once; the poll-era 2x cadence grace does not
+        apply. ``market_closed`` and ``maintenance`` keep their own termination;
+        anything else is ``data_gap`` with the stream's reason as the detail.
+        """
+        if not market_keys:
+            return
+        termination, detail = _gap_termination(reason)
+        for episode in tuple(self._open.values()):
+            if _leg_key(episode.yes_leg) in market_keys or _leg_key(episode.no_leg) in market_keys:
+                self._finish(episode, termination, detail)
         self.flush()
 
     def mark_unassessed(self, group_id: str, now: datetime, cadence_s: float) -> None:

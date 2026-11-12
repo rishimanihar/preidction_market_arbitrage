@@ -1,8 +1,13 @@
 """Latest book per market, plus the generation that produced it.
 
 Heartbeats do not belong here. Age moves only when :meth:`BookStore.put`
-replaces a book. A generation bump drops every book from that venue; an older
-generation cannot put itself back.
+replaces a book. A generation bump drops that venue's books from the same
+source; an older generation cannot put itself back.
+
+Generations are counted per ``(venue, source)``. REST polls and a WebSocket
+stream are separate sequences: a polled fallback book never advances, resets,
+or invalidates a stream generation, and a new stream connection never drops
+the polled books that are covering for it.
 """
 
 from __future__ import annotations
@@ -64,19 +69,20 @@ class BookState:
 
 
 class BookStore:
-    """Per-market latest book and the current connection generation per venue.
+    """Per-market latest book and the current connection generation per venue and source.
 
-    Generations start at 0, matching the adapters. :meth:`put` rejects a book
-    whose generation is older than the venue's current one. :meth:`bump_generation`
-    advances that counter and invalidates the venue's books.
+    Generations start at 0, matching the REST adapters. :meth:`put` rejects a
+    book whose generation is older than the current one for its venue and
+    source. :meth:`bump_generation` advances that counter and invalidates the
+    venue's books from that source.
     """
 
     def __init__(self) -> None:
         self._books: dict[str, BookState] = {}
-        self._generation: dict[Venue, int] = {}
+        self._generation: dict[tuple[Venue, BookSource], int] = {}
 
-    def generation(self, venue: Venue) -> int:
-        return self._generation.get(venue, 0)
+    def generation(self, venue: Venue, source: BookSource = "poll") -> int:
+        return self._generation.get((venue, source), 0)
 
     def get(self, key: str) -> BookState | None:
         return self._books.get(key)
@@ -88,18 +94,16 @@ class BookStore:
     def put(self, book: Book, meta: BookMeta) -> bool:
         """Store ``book``. Return ``False`` when its generation is too old.
 
-        A generation newer than the store's current one becomes the current
-        generation, and any earlier book for that venue is invalidated first.
-        The book being stored is then written on top of that.
+        A generation newer than the current one for this venue and source
+        becomes current, and that source's earlier books for the venue are
+        invalidated first. The book being stored is then written on top.
         """
         if meta.connection_generation != book.connection_generation:
             return False
-        current = self.generation(book.venue)
+        current = self.generation(book.venue, meta.source)
         if meta.connection_generation < current:
             return False
-        if meta.connection_generation > current:
-            self._generation[book.venue] = meta.connection_generation
-            self.invalidate_venue(book.venue, GENERATION)
+        self.advance_generation(book.venue, meta.connection_generation, meta.source)
         self._books[market_key(book.venue, book.market_id)] = BookState(book, meta)
         return True
 
@@ -111,20 +115,41 @@ class BookStore:
         for item in keys:
             self._invalidate_key(item, reason)
 
-    def invalidate_venue(self, venue: Venue, reason: str) -> None:
-        """Invalidate every stored book for ``venue``."""
+    def invalidate_venue(
+        self, venue: Venue, reason: str, *, source: BookSource | None = None
+    ) -> None:
+        """Invalidate ``venue``'s stored books, or only those from ``source``."""
         if reason == "":
             raise ValueError("invalidation reason must be non-empty")
         prefix = f"{venue}:"
-        for key in tuple(self._books):
-            if key.startswith(prefix):
-                self._invalidate_key(key, reason)
+        for key, state in tuple(self._books.items()):
+            if not key.startswith(prefix):
+                continue
+            if source is not None and state.meta.source != source:
+                continue
+            self._invalidate_key(key, reason)
 
-    def bump_generation(self, venue: Venue) -> int:
-        """Advance ``venue``'s generation and invalidate its current books."""
-        nxt = self.generation(venue) + 1
-        self._generation[venue] = nxt
-        self.invalidate_venue(venue, GENERATION)
+    def advance_generation(
+        self, venue: Venue, generation: int, source: BookSource = "poll"
+    ) -> bool:
+        """Make ``generation`` current for ``venue`` and ``source`` if it is newer.
+
+        That source's earlier books for the venue are invalidated. The collector
+        calls this when a stream reconnects while its books are not being
+        stored (REST fallback), so a late book from the dead connection is
+        still rejected after the switch back.
+        """
+        if generation <= self.generation(venue, source):
+            return False
+        self._generation[(venue, source)] = generation
+        self.invalidate_venue(venue, GENERATION, source=source)
+        return True
+
+    def bump_generation(self, venue: Venue, source: BookSource = "poll") -> int:
+        """Advance ``venue``'s generation for ``source`` and invalidate those books."""
+        nxt = self.generation(venue, source) + 1
+        self._generation[(venue, source)] = nxt
+        self.invalidate_venue(venue, GENERATION, source=source)
         return nxt
 
     def _invalidate_key(self, key: str, reason: str) -> None:

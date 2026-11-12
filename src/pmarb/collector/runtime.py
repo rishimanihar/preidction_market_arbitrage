@@ -1,8 +1,28 @@
-"""Poll approved groups and keep a fresh book store.
+"""Poll or stream approved groups and keep a fresh book store.
 
 The evaluator, discovery loop, and episode tracker are not imported here.
 PR-6b attaches them through ``on_books_updated``, ``on_gap``, and an optional
-``discovery`` loop. ``run_once`` is one catalog pass and one poll.
+``discovery`` loop. ``run_once`` is one catalog pass and one REST poll for
+every venue (a one-shot run never opens a stream).
+
+Book source per venue (M2). ``venue_modes`` says, for each venue, whether it
+streams or polls (see :mod:`pmarb.collector.streams`). A streaming venue
+subscribes to the polled (live) groups' markets and stops REST polling them.
+Its books are stored with ``source="stream"`` and a collector-scale stream
+generation: each stream instance's own generation plus an offset, so a
+resubscription or restart never reuses a generation. Stream invalidate events
+invalidate the stored stream book with the stream's reason and close episodes
+on that market through ``on_invalidated``. When a stream disconnect leaves the
+subscribed markets with no valid book, ``on_gap("stream_disconnect")`` closes
+every open episode.
+
+While a venue's stream is unhealthy (:class:`~pmarb.collector.streams.StreamHealth`)
+the venue falls back to REST for those markets. Fallback books are ``source="poll"``
+in the poll generation sequence, never the stream's; stream books are not
+stored during the fallback, and the switch back happens once the stream is
+healthy again. Every switch is a ``stream_fallback`` / ``stream_recovered``
+collector event; the startup mode is a ``stream_mode`` event and each health
+row carries the per-venue state.
 
 Age uses ``BookMeta.received_mono`` and ``received_wall``: this collector's
 clock, stamped when the book is accepted. Skew across venues must use
@@ -17,9 +37,12 @@ are indicative only and must never be qualified.
 open episodes.
 
 ``on_gap`` reasons are ``clock_jump``, ``recording_backpressure``,
-``maintenance`` (once, on entering the window), and ``collector_shutdown``.
-Book invalid reasons also include ``stale``, ``cached``, ``adapter_error``,
-and ``generation``. A heartbeat does not refresh book age.
+``maintenance`` (once, on entering the window), ``stream_disconnect``, and
+``collector_shutdown``. Book invalid reasons also include ``stale``,
+``cached``, ``adapter_error``, ``generation``, the streams' own reasons
+(``disconnected``, ``sequence_gap``, ``schema_failure``, ...), and
+``stream_unhealthy`` / ``stream_resubscribe`` / ``stream_idle``. A heartbeat
+does not refresh book age.
 """
 
 from __future__ import annotations
@@ -29,7 +52,7 @@ import inspect
 import logging
 import signal
 import sqlite3
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -48,14 +71,26 @@ from pmarb.collector.freshness import (
     max_age_for,
 )
 from pmarb.collector.scheduler import PollPlan, build_poll_plan, market_ids
+from pmarb.collector.streams import (
+    POLL,
+    STREAM,
+    STREAM_FALLBACK,
+    HealthLimits,
+    StreamHealth,
+    Transition,
+    VenueMode,
+    poll_mode,
+)
 from pmarb.collector.supervisor import RestartBackoff, supervise
 from pmarb.config import Settings
 from pmarb.http import Backoff
 from pmarb.models import Book, EquivalenceGroup, GroupStatus, Market, Venue
-from pmarb.protocols import VenueAdapter
+from pmarb.protocols import BookEvent, VenueAdapter
 from pmarb.storage.db import DbWriterTask, Write, insert_collector_event
 from pmarb.storage.rawlog import Envelope, RawLogTask, disk_free_bytes
+from pmarb.venues.kalshi.ws import WS_PATH as KALSHI_WS_PATH
 from pmarb.venues.polymarket_us.maintenance import in_maintenance
+from pmarb.venues.polymarket_us.ws import WS_PATH as POLYUS_WS_PATH
 
 _log = logging.getLogger(__name__)
 
@@ -72,12 +107,22 @@ ADAPTER_ERROR = "adapter_error"
 COLLECTOR_SHUTDOWN = "collector_shutdown"
 LOOP_CRASH = "loop_crash"
 HEALTH = "health"
+STREAM_MODE = "stream_mode"
+STREAM_DISCONNECT = "stream_disconnect"
+STREAM_UNHEALTHY = "stream_unhealthy"
+STREAM_RESUBSCRIBE = "stream_resubscribe"
+STREAM_IDLE = "stream_idle"
+STREAM_ENDED = "stream_ended"
+STREAM_ERROR = "stream_error"
+_VENUES = (Venue.KALSHI, Venue.POLYMARKET_US)
+_WS_PATHS = {Venue.KALSHI: KALSHI_WS_PATH, Venue.POLYMARKET_US: POLYUS_WS_PATH}
 
 # Process-wide invalidations. A later freshness pass must not relabel them.
 _PROCESS_REASONS = frozenset({CLOCK_JUMP, RECORDING_BACKPRESSURE, GENERATION, ADAPTER_ERROR})
 
 BooksHook = Callable[[set[str]], Awaitable[None] | None]
 GapHook = Callable[[str], Awaitable[None] | None]
+InvalidateHook = Callable[[set[str], str], Awaitable[None] | None]
 StartupHook = Callable[[], Awaitable[None] | None]
 _SIGNALS = (signal.SIGINT, signal.SIGTERM)
 
@@ -100,6 +145,23 @@ class DiscoveryLoop(Protocol):
 
     async def run_once(self) -> None:
         """One catalog pass."""
+
+
+@dataclass(eq=False, slots=True)
+class _StreamRun:
+    """One venue's live subscription: the market set and the running stream.
+
+    ``base`` offsets the current stream instance's generation onto the
+    collector's per-venue stream sequence. ``gap_reported`` keeps one
+    ``stream_disconnect`` gap per outage.
+    """
+
+    venue: Venue
+    market_ids: tuple[str, ...]
+    stream: AsyncIterator[BookEvent] | None = None
+    base: int = 0
+    task: asyncio.Task[None] | None = None
+    gap_reported: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +207,8 @@ class Collector:
         discovery: DiscoveryLoop | None = None,
         on_startup: StartupHook | None = None,
         on_stopped: StartupHook | None = None,
+        venue_modes: Mapping[Venue, VenueMode] | None = None,
+        on_invalidated: InvalidateHook | None = None,
     ) -> None:
         if queue_limit < 0:
             raise ValueError("queue_limit must be >= 0")
@@ -187,6 +251,20 @@ class Collector:
         self._discovery = discovery
         self._on_startup = on_startup
         self._on_stopped = on_stopped
+        self._on_invalidated = on_invalidated
+        modes = dict(venue_modes or {})
+        for venue in _VENUES:
+            mode = modes.get(venue)
+            if mode is None:
+                modes[venue] = poll_mode(venue)
+            elif mode.venue is not venue:
+                raise ValueError(f"venue_modes[{venue}] describes {mode.venue}")
+        self._modes: dict[Venue, VenueMode] = modes
+        self._health_limits = HealthLimits.from_settings(self._settings)
+        self._health: dict[Venue, StreamHealth] = {}
+        self._runs: dict[Venue, _StreamRun] = {}
+        self._stream_gen_high: dict[Venue, int] = {}
+        self._once = False
         self._groups: tuple[EquivalenceGroup, ...] = ()
         self._markets: tuple[Market, ...] = ()
         self.set_universe(groups, markets)
@@ -246,6 +324,33 @@ class Collector:
         return self._raw_logging
 
     @property
+    def venue_modes(self) -> Mapping[Venue, VenueMode]:
+        """The configured book source per venue (stream or poll, and why)."""
+        return dict(self._modes)
+
+    def stream_health(self, venue: Venue) -> StreamHealth | None:
+        """The venue's stream health, or ``None`` before its stream first starts."""
+        return self._health.get(venue)
+
+    def active_source(self, venue: Venue) -> str:
+        """``stream`` when the venue's live markets come from its stream right now."""
+        return POLL if self._polls_rest(venue) else STREAM
+
+    def stream_is_current(self, venue: Venue, generation: int) -> bool:
+        """True when ``venue`` streams, its stream is healthy, and ``generation`` is live.
+
+        The evaluator calls this per leg: a stream book is atomic only on the
+        connection that is delivering right now.
+        """
+        if self._once or not self._streams(venue):
+            return False
+        health = self._health.get(venue)
+        if health is None or not health.healthy:
+            return False
+        current = self._current_stream_generation(venue)
+        return current is not None and generation == current
+
+    @property
     def backpressure(self) -> bool:
         return self._backpressure
 
@@ -294,9 +399,11 @@ class Collector:
         """One discovery pass and one poll, then the same shutdown as :meth:`stop`."""
         self._bind()
         self._install_signals()
+        self._once = True
         started = self._clock.monotonic()
         try:
             await self._run_startup()
+            self._announce_modes()
             self._start_writers()
             if self._db_task is not None:
                 await self._wait_db()
@@ -322,6 +429,8 @@ class Collector:
             self._stopping = True
             try:
                 await self._cancel_and_wait(self._service_tasks())
+                for run in tuple(self._runs.values()):
+                    await self._close_stream(run)
                 try:
                     await self._notify_gap(COLLECTOR_SHUTDOWN)
                 finally:
@@ -345,6 +454,7 @@ class Collector:
     async def _serve(self) -> None:
         assert self._stopped is not None
         await self._run_startup()
+        self._announce_modes()
         self._start_writers()
         if self._db_task is not None:
             await self._wait_db()
@@ -489,6 +599,8 @@ class Collector:
         self._polled_ids = frozenset(item.group_id for item in plan.polled)
         selected_ids = frozenset(item.group_id for item in selected)
         self._discovery_ids = selected_ids - self._polled_ids
+        if not once:
+            await self._sync_streams(plan)
         hot = tuple(item for item in selected if item.group_id in self._polled_ids)
         cold = tuple(item for item in selected if item.group_id in self._discovery_ids)
         batches = [batch for batch in (hot, cold) if batch]
@@ -496,8 +608,11 @@ class Collector:
             batches = [tuple(selected)]
         touched: set[str] = set()
         for batch in batches:
-            kalshi_ids = market_ids(batch, Venue.KALSHI)
-            poly_ids = market_ids(batch, Venue.POLYMARKET_US)
+            # A healthy stream covers the live (hot) markets. Discovery samples
+            # stay on REST for every venue.
+            streamed = batch is hot
+            kalshi_ids = self._rest_ids(batch, Venue.KALSHI, streamed=streamed)
+            poly_ids = self._rest_ids(batch, Venue.POLYMARKET_US, streamed=streamed)
             kalshi_result, poly_result = await asyncio.gather(
                 self._timed_fetch(self._kalshi, kalshi_ids),
                 self._timed_fetch(self._polyus, poly_ids),
@@ -565,6 +680,7 @@ class Collector:
         if self._backpressure:
             changed |= self._all_group_ids()
         self._check_disk()
+        changed |= await self._check_stream_health(now_mono)
         await self._sync_maintenance(now_wall)
         changed |= self._apply_book_freshness(now_mono, now_wall)
         await self._notify_books(set(self._polled_ids) | changed)
@@ -747,6 +863,7 @@ class Collector:
             "raw_logging": self._raw_logging,
             "backpressure": self._backpressure,
             "cadence_s": self.cadence_s,
+            "venues": {str(venue): self._venue_status(venue) for venue in _VENUES},
             "alarm": alarm,
         }
 
@@ -852,7 +969,7 @@ class Collector:
         await _call(self._on_gap, reason)
 
     def _service_tasks(self) -> list[asyncio.Task[None]]:
-        return [
+        tasks = [
             task
             for task in (
                 self._poll_task,
@@ -862,6 +979,8 @@ class Collector:
             )
             if task is not None
         ]
+        tasks.extend(run.task for run in self._runs.values() if run.task is not None)
+        return tasks
 
     def _writer_tasks(self) -> list[asyncio.Task[None]]:
         return [task for task in (self._raw_handle, self._db_handle) if task is not None]
@@ -878,6 +997,333 @@ class Collector:
             exc = task.exception()
             if exc is not None:
                 _log.error("task %s ended with %s", task.get_name(), type(exc).__name__)
+
+    # --- streams -----------------------------------------------------------
+
+    def _announce_modes(self) -> None:
+        for venue in _VENUES:
+            mode = self._modes[venue]
+            detail = mode.describe()
+            if self._once and mode.mode == STREAM:
+                detail["once"] = "a one-shot run polls REST; the stream starts only in a full run"
+            _log.info("%s book source: %s (%s)", venue, mode.mode, mode.reason)
+            self._emit(str(venue), STREAM_MODE, detail)
+
+    def _streams(self, venue: Venue) -> bool:
+        mode = self._modes.get(venue)
+        return mode is not None and mode.mode == STREAM
+
+    def _polls_rest(self, venue: Venue) -> bool:
+        """True when ``venue``'s live markets come from REST right now."""
+        if self._once or not self._streams(venue):
+            return True
+        health = self._health.get(venue)
+        return health is not None and health.fallback
+
+    def _rest_ids(self, batch: Sequence[Any], venue: Venue, *, streamed: bool) -> tuple[str, ...]:
+        """REST ids for one batch. A healthy stream's markets never also come from REST."""
+        ids = market_ids(batch, venue)
+        if self._polls_rest(venue):
+            return ids
+        if streamed:
+            return ()
+        run = self._runs.get(venue)
+        if run is None:
+            return ids
+        covered = set(run.market_ids)
+        return tuple(market_id for market_id in ids if market_id not in covered)
+
+    def _venue_status(self, venue: Venue) -> dict[str, Any]:
+        mode = self._modes[venue]
+        status: dict[str, Any] = {
+            "mode": mode.mode,
+            "reason": mode.reason,
+            "active": self.active_source(venue),
+        }
+        if mode.mode != STREAM:
+            return status
+        run = self._runs.get(venue)
+        health = self._health.get(venue)
+        status["subscribed"] = 0 if run is None else len(run.market_ids)
+        status["generation"] = self._current_stream_generation(venue)
+        if health is None or run is None:
+            status["state"] = "idle"
+            status["fallback"] = health is not None and health.fallback
+        else:
+            status.update(health.describe(self._clock.monotonic()))
+        return status
+
+    def _current_stream_generation(self, venue: Venue) -> int | None:
+        run = self._runs.get(venue)
+        if run is None or run.stream is None:
+            return None
+        local = getattr(run.stream, "connection_generation", None)
+        if isinstance(local, bool) or not isinstance(local, int) or local < 1:
+            return None
+        return run.base + local
+
+    async def _sync_streams(self, plan: PollPlan) -> None:
+        """Subscribe each streaming venue to the polled groups' markets.
+
+        A new market restarts that venue's stream; markets that drop out stay
+        subscribed until the next restart (fewer reconnects). No polled group
+        stops the stream.
+        """
+        for venue in _VENUES:
+            if self._modes[venue].mode != STREAM or self._stopping:
+                continue
+            wanted = market_ids(plan.polled, venue)
+            run = self._runs.get(venue)
+            if not wanted:
+                if run is not None:
+                    await self._stop_stream(venue, STREAM_IDLE)
+                continue
+            if run is not None and set(wanted) <= set(run.market_ids):
+                continue
+            if run is not None:
+                await self._stop_stream(venue, STREAM_RESUBSCRIBE)
+            self._start_stream(venue, wanted)
+
+    def _start_stream(self, venue: Venue, ids: tuple[str, ...]) -> None:
+        now = self._clock.monotonic()
+        health = self._health.get(venue)
+        if health is None:
+            self._health[venue] = StreamHealth(venue, self._health_limits, now)
+        else:
+            health.restart(now)
+        run = _StreamRun(venue=venue, market_ids=ids)
+        self._runs[venue] = run
+        self._emit(str(venue), "stream_subscribe", {"markets": len(ids)})
+        run.task = asyncio.create_task(self._stream_loop(run), name=f"collector-stream-{venue}")
+
+    async def _stop_stream(self, venue: Venue, reason: str) -> None:
+        run = self._runs.pop(venue, None)
+        if run is None:
+            return
+        if run.task is not None and not run.task.done():
+            run.task.cancel()
+            await asyncio.wait([run.task])
+        await self._close_stream(run)
+        health = self._health.get(venue)
+        if health is not None and reason == STREAM_IDLE:
+            health.idle()
+        touched = await self._invalidate_stream_books(venue, reason)
+        self._emit(str(venue), "stream_unsubscribe", {"reason": reason})
+        if touched:
+            await self._notify_books(touched)
+
+    async def _close_stream(self, run: _StreamRun) -> None:
+        stream, run.stream = run.stream, None
+        if stream is None:
+            return
+        local = getattr(stream, "connection_generation", None)
+        if isinstance(local, int) and not isinstance(local, bool):
+            high = self._stream_gen_high.get(run.venue, 0)
+            self._stream_gen_high[run.venue] = max(high, run.base + local)
+        aclose = getattr(stream, "aclose", None)
+        if aclose is None:
+            return
+        try:
+            await aclose()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - a failed close must not stop the collector
+            _log.warning("closing %s stream failed: %s", run.venue, type(exc).__name__)
+
+    async def _stream_loop(self, run: _StreamRun) -> None:
+        """Consume one venue's stream; restart it with backoff when it ends or fails."""
+        venue = run.venue
+        factory = self._modes[venue].factory
+        assert factory is not None
+        attempt = 0
+        while not self._stopping and self._runs.get(venue) is run:
+            run.base = self._stream_gen_high.get(venue, 0)
+            reason = STREAM_ENDED
+            try:
+                run.stream = factory(run.market_ids)
+                async for event in run.stream:
+                    if self._stopping or self._runs.get(venue) is not run:
+                        return
+                    await self._apply_stream_event(run, event)
+                    if event.kind == "snapshot":
+                        attempt = 0
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - restart the stream, keep the collector
+                reason = STREAM_ERROR
+                self._on_crash(f"stream:{venue}", exc)
+            finally:
+                await self._close_stream(run)
+            if self._stopping or self._runs.get(venue) is not run:
+                return
+            await self._stream_lost(run, reason)
+            await self._clock.sleep(self._backoff.delay(attempt))
+            attempt += 1
+            health = self._health.get(venue)
+            if health is not None:
+                health.restart(self._clock.monotonic())
+
+    async def _stream_lost(self, run: _StreamRun, reason: str) -> None:
+        """The stream object ended or raised: treat it as a disconnect of every market."""
+        self._emit(str(run.venue), reason, {"markets": len(run.market_ids)})
+        for market_id in run.market_ids:
+            event = BookEvent("invalidate", None, market_id, run.venue, reason)
+            await self._apply_stream_event(run, event)
+
+    async def _apply_stream_event(self, run: _StreamRun, event: BookEvent) -> None:
+        venue = run.venue
+        health = self._health[venue]
+        if event.venue is not venue:
+            _log.warning("dropped %s event from the %s stream", event.venue, venue)
+            return
+        now_mono = self._clock.monotonic()
+        now_wall = self._clock.wall()
+        key = market_key(venue, event.market_id)
+        touched: set[str] = set()
+        invalidated: set[str] = set()
+        reason = event.reason or "stream_invalidate"
+        disconnect = False
+        if event.kind == "snapshot":
+            book = event.book
+            if book is None or book.market_id != event.market_id or book.venue is not venue:
+                _log.warning("dropped a malformed %s stream snapshot", venue)
+                return
+            local = book.connection_generation
+            if local < 1:
+                _log.warning("dropped a %s stream snapshot without a connection", venue)
+                return
+            generation = run.base + local
+            current = self._current_stream_generation(venue)
+            if current is not None and generation != current:
+                # Only the connection delivering right now may update a book.
+                _log.warning(
+                    "dropped a %s stream snapshot from generation %s (current %s)",
+                    venue,
+                    generation,
+                    current,
+                )
+                return
+            high = self._stream_gen_high.get(venue, 0)
+            self._stream_gen_high[venue] = max(high, generation)
+            self.store.advance_generation(venue, generation, "stream")
+            health.on_snapshot(now_mono)
+            run.gap_reported = False
+            if not health.fallback:
+                previous = self.store.get(key)
+                stamped = book.model_copy(update={"connection_generation": generation})
+                if self._accept_stream_book(stamped, now_mono, now_wall):
+                    touched |= self._index.get(key, set())
+                    was_valid = (
+                        previous is not None
+                        and previous.invalid_reason is None
+                        and previous.book.valid
+                    )
+                    if was_valid and not stamped.valid:
+                        # A snapshot that arrives invalid (crossed, suspended)
+                        # ends the run like an invalidate event does.
+                        invalidated.add(key)
+                        reason = stamped.invalid_reason or "invalid_book"
+        elif event.kind == "invalidate":
+            kind = health.on_invalidate(now_mono, reason)
+            disconnect = kind == "disconnect"
+            self._enqueue_raw(_stream_conn_envelope(venue, event, run, now_mono, now_wall))
+            if not health.fallback:
+                state = self.store.get(key)
+                if state is not None and state.meta.source == "stream":
+                    if state.invalid_reason is None:
+                        invalidated.add(key)
+                    self.store.invalidate(key, reason)
+                    touched |= self._index.get(key, set())
+        else:
+            _log.warning("dropped a %s stream event of kind %r", venue, event.kind)
+            return
+        transition = health.check(now_mono)
+        if transition is not None:
+            touched |= await self._apply_transition(venue, transition)
+        if invalidated:
+            await self._notify_invalidated(invalidated, reason)
+        if (
+            disconnect
+            and not health.fallback
+            and not run.gap_reported
+            and not self._has_valid_book(venue, run.market_ids)
+        ):
+            run.gap_reported = True
+            self._emit(str(venue), STREAM_DISCONNECT, {"reason": reason})
+            await self._notify_gap(STREAM_DISCONNECT)
+        if touched:
+            await self._notify_books(touched)
+
+    def _accept_stream_book(self, book: Book, now_mono: float, now_wall: datetime) -> bool:
+        self._enqueue_raw(_stream_envelope(book, now_mono, now_wall))
+        meta = BookMeta(
+            received_mono=now_mono,
+            received_wall=now_wall,
+            connection_generation=book.connection_generation,
+            source="stream",
+            cached=book_is_cached(book),
+            books_atomic_group_id=None,
+            discovery_sample=self._market_is_discovery(book.venue, book.market_id),
+        )
+        if self.store.put(book, meta):
+            return True
+        _log.warning(
+            "rejected %s stream book %s from generation %s (current %s)",
+            book.venue,
+            book.market_id,
+            book.connection_generation,
+            self.store.generation(book.venue, "stream"),
+        )
+        return False
+
+    def _has_valid_book(self, venue: Venue, ids: Sequence[str]) -> bool:
+        for market_id in ids:
+            state = self.store.get(market_key(venue, market_id))
+            if state is not None and state.invalid_reason is None and state.book.valid:
+                return True
+        return False
+
+    async def _apply_transition(self, venue: Venue, transition: Transition) -> set[str]:
+        detail = dict(transition.detail)
+        detail["generation"] = self._current_stream_generation(venue)
+        self._emit(str(venue), transition.kind, detail)
+        if transition.kind != STREAM_FALLBACK:
+            _log.info("%s stream healthy again; leaving REST fallback", venue)
+            return set()
+        _log.warning("%s stream unhealthy (%s); falling back to REST", venue, transition.reason)
+        return await self._invalidate_stream_books(venue, STREAM_UNHEALTHY)
+
+    async def _invalidate_stream_books(self, venue: Venue, reason: str) -> set[str]:
+        """Invalidate the venue's stream books; close their episodes; return their groups."""
+        keys = {
+            state.market_key
+            for state in self.store.items()
+            if state.book.venue is venue
+            and state.meta.source == "stream"
+            and state.invalid_reason is None
+        }
+        self.store.invalidate_venue(venue, reason, source="stream")
+        if keys:
+            await self._notify_invalidated(keys, reason)
+        touched: set[str] = set()
+        for key in keys:
+            touched |= self._index.get(key, set())
+        return touched
+
+    async def _check_stream_health(self, now_mono: float) -> set[str]:
+        touched: set[str] = set()
+        for venue in _VENUES:
+            health = self._health.get(venue)
+            if health is None or venue not in self._runs:
+                continue
+            transition = health.check(now_mono)
+            if transition is not None:
+                touched |= await self._apply_transition(venue, transition)
+        return touched
+
+    async def _notify_invalidated(self, keys: set[str], reason: str) -> None:
+        if self._on_invalidated is not None:
+            await _call(self._on_invalidated, set(keys), reason)
 
     def _signal_stop(self) -> None:
         if self._signal_task is not None and not self._signal_task.done():
@@ -929,6 +1375,36 @@ def _envelope(book: Book, now_mono: float, now_wall: datetime) -> Envelope:
         status=200,
         cache_headers=headers,
         body=body,
+    )
+
+
+def _stream_envelope(book: Book, now_mono: float, now_wall: datetime) -> Envelope:
+    return Envelope(
+        recv_utc=now_wall.astimezone(UTC).isoformat(),
+        recv_mono_ns=round(now_mono * 1_000_000_000),
+        venue=str(book.venue),
+        kind="ws_msg",
+        conn_gen=book.connection_generation,
+        endpoint=_WS_PATHS.get(book.venue, "ws"),
+        status=None,
+        body=book.raw_native if isinstance(book.raw_native, dict) else None,
+    )
+
+
+def _stream_conn_envelope(
+    venue: Venue, event: BookEvent, run: _StreamRun, now_mono: float, now_wall: datetime
+) -> Envelope:
+    local = getattr(run.stream, "connection_generation", None)
+    generation = run.base + local if isinstance(local, int) and not isinstance(local, bool) else 0
+    return Envelope(
+        recv_utc=now_wall.astimezone(UTC).isoformat(),
+        recv_mono_ns=round(now_mono * 1_000_000_000),
+        venue=str(venue),
+        kind="conn",
+        conn_gen=generation,
+        endpoint=_WS_PATHS.get(venue, "ws"),
+        status=None,
+        body={"event": event.kind, "market_id": event.market_id, "reason": event.reason},
     )
 
 

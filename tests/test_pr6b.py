@@ -192,6 +192,7 @@ def _settings(
     precision: str | None = "0.0001",
     theta: Decimal | None = Decimal("0.075"),
     fee_scenario: str = "conservative",
+    depth_confirmed: bool = False,
 ) -> Settings:
     return Settings(
         _env_file=None,
@@ -200,6 +201,7 @@ def _settings(
         kalshi_member_precision=precision,  # type: ignore[arg-type]
         polyus_theta=theta,
         fee_scenario=fee_scenario,  # type: ignore[arg-type]
+        polyus_ws_depth_confirmed=depth_confirmed,
     )
 
 
@@ -210,6 +212,7 @@ def _pipe(
     precision: str | None = "0.0001",
     theta: Decimal | None = Decimal("0.075"),
     fee_scenario: str = "conservative",
+    depth_confirmed: bool = False,
 ) -> Pipe:
     clock = FakeClock(mono=MONO, wall=WALL)
     settings = _settings(
@@ -218,6 +221,7 @@ def _pipe(
         precision=precision,
         theta=theta,
         fee_scenario=fee_scenario,
+        depth_confirmed=depth_confirmed,
     )
     conn = open_writer(tmp_path / "pmarb.sqlite")
     listed, other = _pair(clock.wall())
@@ -581,7 +585,7 @@ def _assert_scenario_stays_indicative(
     theta: Decimal | None,
     prefixed_sides: int,
 ) -> None:
-    pipe = _pipe(tmp_path, precision=precision, theta=theta)
+    pipe = _pipe(tmp_path, precision=precision, theta=theta, depth_confirmed=True)
     try:
         _, _, human_k, human_p = _stream_markets()
         group = _approved("human-scenario", "ada", human_k, human_p)
@@ -632,6 +636,16 @@ def _prime_stream(pipe: Pipe, group: EquivalenceGroup, markets: tuple[Market, Ma
         )
         assert pipe.collector.store.put(book, meta)
     pipe.evaluator._opens = lambda _group_id: True
+    _streams_healthy(pipe)
+
+
+def _streams_healthy(pipe: Pipe) -> None:
+    """Treat both stored stream generations as live, healthy connections.
+
+    These tests are about the D27/D30 downgrades of atomic books. Real stream
+    health, generations, and fallback are covered in test_stream_integration.
+    """
+    pipe.evaluator._stream_current = lambda _venue, _generation: True
 
 
 async def test_edge_opens_an_indicative_episode_then_disqualifies(tmp_path) -> None:
@@ -734,7 +748,7 @@ def test_auto_group_never_qualifies_even_when_books_are_atomic(tmp_path) -> None
     assert downgraded.net_profit == qualified[0].net_profit
     assert downgrade_auto_qualified(downgraded) is downgraded
 
-    pipe = _pipe(tmp_path)
+    pipe = _pipe(tmp_path, depth_confirmed=True)
     try:
         auto, human = _stream_groups()
         for group in (auto, human):
@@ -751,6 +765,7 @@ def test_auto_group_never_qualifies_even_when_books_are_atomic(tmp_path) -> None
             )
             assert pipe.collector.store.put(book, meta)
         pipe.evaluator._opens = lambda _group_id: True
+        _streams_healthy(pipe)
         asyncio.run(pipe.evaluator.on_books_updated({auto.group_id, human.group_id}))
         rows = pipe.conn.execute(
             'SELECT group_id, "class", books_atomic FROM assessments'

@@ -1,11 +1,18 @@
 """Price polled groups and store an assessment when the result actually moves.
 
-``books_atomic`` is true only when every leg is a stream book and the skew
-between those stamps is within the qualified limit. A poll is never atomic.
+``books_atomic`` is true only when every leg is a valid stream book from a
+healthy stream on that stream's current connection generation, no leg is
+tagged ``depth_unconfirmed``, and the skew between the legs' receipt stamps
+is within ``Limits.max_skew_qualified_s`` (250 ms by default). A poll is never
+atomic, so a REST fallback leg, or one venue streaming while the other polls,
+gives indicative results. A Polymarket US stream leg also stays non-atomic
+until ``polyus_ws_depth_confirmed`` records that a real frame confirmed the
+depth.
+
 Two results stay indicative even when the books are atomic: a reviewer whose
 name starts with ``auto:`` (D27), and a fee quote whose provenance starts
-with ``scenario:``. Both are stored by rebuilding a qualified assessment as
-indicative. The fee quote itself is unchanged, so the scenario provenance
+with ``scenario:`` (D30). Both are stored by rebuilding a qualified assessment
+as indicative. The fee quote itself is unchanged, so the scenario provenance
 is what the assessment row records.
 """
 
@@ -73,14 +80,52 @@ def _scenario_fee(assessment: OpportunityAssessment) -> bool:
     return False
 
 
-def books_are_atomic(states: Sequence[BookState], skew_limit_s: float) -> bool:
-    """True when every leg is a stream snapshot and their skew is within the limit."""
-    if len(states) < 2:
+StreamCurrent = Callable[[Venue, int], bool]
+
+
+def depth_unconfirmed(book: Book, *, depth_confirmed: bool = False) -> bool:
+    """True when a streamed book may be missing levels beyond the ones sent.
+
+    The Polymarket US stream tags its books ``raw_native["depth_unconfirmed"]``.
+    Until ``depth_confirmed`` (config ``polyus_ws_depth_confirmed``) is set, a
+    Polymarket US stream book counts as unconfirmed even without the tag.
+    """
+    raw = book.raw_native if isinstance(book.raw_native, dict) else {}
+    if raw.get("depth_unconfirmed") is True:
+        return True
+    depth = raw.get("depth")
+    if isinstance(depth, dict) and depth.get("depth_unconfirmed") is True:
+        return True
+    return book.venue is Venue.POLYMARKET_US and not depth_confirmed
+
+
+def books_are_atomic(
+    states: Sequence[BookState],
+    skew_limit_s: Decimal | float,
+    *,
+    stream_current: StreamCurrent | None = None,
+    depth_confirmed: bool = False,
+) -> bool:
+    """True only when the legs are one cross-venue snapshot we can qualify.
+
+    Every leg must be a valid ``stream`` book, its venue's stream must be
+    healthy with the book on the current connection generation
+    (``stream_current``; without it nothing is atomic), no leg may be
+    :func:`depth_unconfirmed`, and the receipt skew must be ``<= skew_limit_s``.
+    """
+    if len(states) < 2 or stream_current is None:
         return False
-    if any(state.meta.source != "stream" for state in states):
-        return False
-    monos = [state.book.received_monotonic for state in states]
-    return max(monos) - min(monos) <= skew_limit_s
+    for state in states:
+        if state.meta.source != "stream":
+            return False
+        if state.invalid_reason is not None or not state.book.valid:
+            return False
+        if depth_unconfirmed(state.book, depth_confirmed=depth_confirmed):
+            return False
+        if not stream_current(state.book.venue, state.meta.connection_generation):
+            return False
+    monos = [Decimal(str(state.book.received_monotonic)) for state in states]
+    return max(monos) - min(monos) <= Decimal(str(skew_limit_s))
 
 
 def should_persist_assessment(
@@ -134,6 +179,7 @@ class Evaluator:
         opens_episodes: Callable[[str], bool] | None = None,
         cadence_s: Callable[[], float] | None = None,
         record_event: Callable[[str, dict[str, object]], None] | None = None,
+        stream_current: StreamCurrent | None = None,
     ) -> None:
         self._registry = registry
         self._store = store
@@ -148,10 +194,12 @@ class Evaluator:
         self._record_event = (
             record_event if record_event is not None else (lambda _kind, _detail: None)
         )
+        # None until bound to a collector: then no book is atomic.
+        self._stream_current: StreamCurrent | None = stream_current
         self._written: dict[tuple[object, ...], AssessmentSnapshot] = {}
 
     def bind(self, collector: object) -> None:
-        """Read the fast-set and the cadence from a running collector."""
+        """Read the fast-set, the cadence, and stream health from a running collector."""
         opens = getattr(collector, "opens_episodes", None)
         cadence = getattr(collector, "cadence_s", None)
         if not callable(opens) or not isinstance(cadence, int | float):
@@ -161,6 +209,9 @@ class Evaluator:
         record = getattr(collector, "record_event", None)
         if callable(record):
             self._record_event = lambda kind, detail: record(None, kind, detail)
+        current = getattr(collector, "stream_is_current", None)
+        if callable(current):
+            self._stream_current = current
 
     async def on_books_updated(self, group_ids: set[str]) -> None:
         for group_id in sorted(group_ids):
@@ -208,7 +259,12 @@ class Evaluator:
             if self._opens(group_id):
                 self._episodes.mark_unassessed(group_id, now_wall, cadence)
             return
-        atomic = books_are_atomic(states, self._settings.skew_qualified_s)
+        atomic = books_are_atomic(
+            states,
+            limits.max_skew_qualified_s,
+            stream_current=self._stream_current,
+            depth_confirmed=self._settings.polyus_ws_depth_confirmed,
+        )
         fee_models = self._fee_models(group)
         auto = bool(group.reviewer) and group.reviewer.startswith("auto:")
         for qty in SIZE_VIEWS:
