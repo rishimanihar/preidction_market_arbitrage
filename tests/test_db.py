@@ -200,13 +200,13 @@ def test_writer_pragmas_migrations_are_idempotent(tmp_path: Path) -> None:
         assert conn.execute("PRAGMA synchronous").fetchone() == (1,)
         assert conn.execute("PRAGMA foreign_keys").fetchone() == (1,)
         assert conn.execute("PRAGMA busy_timeout").fetchone() == (5000,)
-        assert conn.execute("SELECT version FROM schema_version").fetchone() == (1,)
+        assert conn.execute("SELECT version FROM schema_version").fetchone() == (2,)
         assert conn.execute("SELECT COUNT(*) FROM schema_version").fetchone() == (1,)
         upsert_market(conn, _market(), AWARE)
         assert not conn.in_transaction
     with closing(open_writer(path)) as again:
         assert again.execute("SELECT COUNT(*) FROM schema_version").fetchone() == (1,)
-        assert again.execute("SELECT version FROM schema_version").fetchone() == (1,)
+        assert again.execute("SELECT version FROM schema_version").fetchone() == (2,)
         assert again.execute("SELECT title FROM markets").fetchone() == ("NE at DET",)
         names = {
             row[0]
@@ -222,7 +222,7 @@ def test_newer_schema_and_broken_version_are_refused(tmp_path: Path) -> None:
     with closing(open_writer(path)) as conn:
         conn.execute("UPDATE schema_version SET version = 99")
     with pytest.raises(
-        SchemaVersionError, match=r"schema_version 99 is newer than this code supports \(1\)"
+        SchemaVersionError, match=r"schema_version 99 is newer than this code supports \(2\)"
     ):
         open_writer(path)
     with closing(sqlite3.connect(path)) as raw:

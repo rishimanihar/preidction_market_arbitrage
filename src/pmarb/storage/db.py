@@ -31,7 +31,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pmarb.models import (
     AssessmentClass,
@@ -41,6 +41,9 @@ from pmarb.models import (
     Market,
     OpportunityAssessment,
 )
+
+if TYPE_CHECKING:
+    from pmarb.gamestate.kalshi_live import GameState
 
 _log = logging.getLogger(__name__)
 
@@ -659,6 +662,43 @@ def insert_collector_event(
             VALUES (?, ?, ?, ?)
             """,
             (stamped, venue, kind, payload),
+        )
+        return _row_id(cur)
+
+    return int(_atomic(conn, run))
+
+
+def insert_game_state(conn: sqlite3.Connection, state: GameState) -> int:
+    """Append one typed normalized game-state observation."""
+    pending = None if state.result_pending is None else bool_int(state.result_pending)
+    delayed = None if state.delayed_flag is None else bool_int(state.delayed_flag)
+    received = format_utc(state.received_utc)
+
+    def run() -> int:
+        cur = conn.execute(
+            """
+            INSERT INTO game_state (
+                source, event_ticker, milestone_id, league, status, period, clock,
+                home_points, away_points, possession, last_play, result_pending,
+                delayed, received_utc
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                state.source,
+                state.event_ticker,
+                state.milestone_id,
+                state.league,
+                state.status,
+                state.period,
+                state.clock,
+                state.home_points,
+                state.away_points,
+                state.possession,
+                state.last_play,
+                pending,
+                delayed,
+                received,
+            ),
         )
         return _row_id(cur)
 

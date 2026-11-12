@@ -182,6 +182,7 @@ class ObservationHttpClient:
         return {
             ("kalshi", "books"): bucket(s.kalshi_books_rps),
             ("kalshi", "discovery"): bucket(s.kalshi_discovery_rps),
+            ("kalshi", "gamestate"): bucket(1.0),
             ("polyus", "books"): bucket(s.polyus_books_rps),
             ("polyus", "discovery"): bucket(s.polyus_discovery_rps),
         }

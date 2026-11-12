@@ -212,9 +212,11 @@ async def test_default_cap_is_5mb_and_timeouts_from_settings() -> None:
 async def test_separate_buckets_per_venue_and_purpose() -> None:
     async with make_client(lambda r: httpx.Response(200)) as client:
         b = client._buckets
-        assert len({id(v) for v in b.values()}) == 4
+        assert len({id(v) for v in b.values()}) == 5
         assert b[("kalshi", "books")].rate == 3.0
         assert b[("kalshi", "discovery")].rate == 1.0
+        assert b[("kalshi", "gamestate")].rate == 1.0
+        assert b[("kalshi", "gamestate")].burst == 1.0
         assert b[("polyus", "books")].rate == 4.0
         assert b[("polyus", "discovery")].rate == 1.0
         with pytest.raises(ValueError, match="no rate bucket"):
