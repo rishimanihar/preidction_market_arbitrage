@@ -2,10 +2,9 @@
 
 This is the build's living status: what's done, what we've learned that isn't in the plan yet, and what comes next. **Update it at every milestone step.** Read it alongside `docs/IMPLEMENTATION_PLAN.md` (what we're building) and `docs/research/` (why).
 
-_Last updated: 2026-11-11 22:35 CST_
+_Last updated: 2026-11-11 23:05 CST_
 
 ## Status
-
 | Item | State | Where |
 |---|---|---|
 | Research (5 reports, fact-checked) | done | `docs/research/` |
@@ -14,12 +13,12 @@ _Last updated: 2026-11-11 22:35 CST_
 | Phase 1 core (Decimal models, ladder, fees, 2-venue calculator; 39 tests) | done | `src/pmarb/` |
 | **PR #1** foundation → `main` | open, awaiting Rishi | GitHub PR #1 |
 | PR-0 contracts (models, protocols, DDL; 64 tests) | done, PR open | branch `m1/pr0-contracts` |
-| PR-2a config / secrets / redacting logs / observation HTTP client | built, in review | agent worktree → PR-2 |
-| PR-2b crash-safe raw log | built, in review | agent worktree → PR-2 |
-| Kalshi fee-rounding algorithm (feeds PR-1) | built, in review | agent worktree |
-| Synthetic API fixtures, both venues (feeds PR-3/4) | built, in review | agent worktree |
-| Team alias tables + resolver, 6 leagues (feeds PR-5b) | built, in review | agent worktree |
-| PR-1, PR-3 … PR-8 | not started | plan §10 |
+| PR-2 foundations: config, secrets, redacting logs, GET-only HTTP client, crash-safe raw log, SQLite writer (155 tests) | done, PR open | `m1/pr2-foundations` |
+| PR-3 Kalshi REST adapter (Codex; 186 tests) | done, PR open | `m1/pr3-kalshi` |
+| PR-4 Polymarket US REST adapter (Codex; 175 tests) | done, PR open | `m1/pr4-polymarket-us` |
+| PR-1 economics + fees (Kalshi fee-rounding algorithm included) | in progress (Grok) | `m1/pr1-economics` |
+| PR-5b matching + team tables (6 leagues) | in progress (Codex) | `m1/pr5b-matching` |
+| PR-5a, PR-6a/6b, PR-7, PR-8 | not started | plan §10 |
 | Venue accounts + API keys (users) | not started; gates M2 | plan §10 "Your task" |
 
 ## Learned since plan v1.1
