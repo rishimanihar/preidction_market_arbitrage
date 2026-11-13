@@ -380,6 +380,35 @@ def test_review_passes_explicit_env_file_to_child(
     assert called["env"]["PMARB_ENV_FILE"] == str(env_file)
 
 
+def test_doctor_schema_version_tracks_packaged_migrations(tmp_path: Path) -> None:
+    """Doctor must follow the packaged migrations, not a hard-coded schema 1."""
+    from importlib.resources import files
+
+    from pmarb.storage.db import packaged_schema_version
+
+    names = [
+        entry.name
+        for entry in files("pmarb.storage.migrations").iterdir()
+        if entry.name.endswith(".sql")
+    ]
+    latest = max(int(name.split("_", 1)[0]) for name in names)
+    assert cli.EXPECTED_SCHEMA_VERSION == packaged_schema_version() == latest
+    assert latest != 1
+    data_dir = tmp_path / "data"
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    _make_database(data_dir)
+    assert not any(
+        "schema" in error for error in _doctor_offline(Settings(data_dir=data_dir), repo_root)
+    )
+    old = tmp_path / "old"
+    _make_database(old, version=1)
+    assert any(
+        f"schema version must be {latest}" in error
+        for error in _doctor_offline(Settings(data_dir=old), repo_root)
+    )
+
+
 def test_doctor_accepts_a_freshly_initialized_database(tmp_path: Path) -> None:
     data_dir = tmp_path / "outside" / "data"
     repo_root = tmp_path / "repo"
