@@ -134,6 +134,7 @@ class Evaluator:
         opens_episodes: Callable[[str], bool] | None = None,
         cadence_s: Callable[[], float] | None = None,
         record_event: Callable[[str, dict[str, object]], None] | None = None,
+        on_assessment: Callable[[OpportunityAssessment], None] | None = None,
     ) -> None:
         self._registry = registry
         self._store = store
@@ -148,6 +149,7 @@ class Evaluator:
         self._record_event = (
             record_event if record_event is not None else (lambda _kind, _detail: None)
         )
+        self._on_assessment = on_assessment
         self._written: dict[tuple[object, ...], AssessmentSnapshot] = {}
 
     def bind(self, collector: object) -> None:
@@ -226,7 +228,9 @@ class Evaluator:
             for assessment in priced:
                 if auto or _scenario_fee(assessment):
                     assessment = downgrade_auto_qualified(assessment)
-                self._persist(assessment)
+                persisted = self._persist(assessment)
+                if persisted and self._on_assessment is not None:
+                    self._on_assessment(assessment)
                 if self._opens(group_id):
                     self._episodes.observe(assessment, opens_episode=True)
 
@@ -262,7 +266,7 @@ class Evaluator:
             models[market.market_key] = adapter.fee_model(market)
         return models
 
-    def _persist(self, assessment: OpportunityAssessment) -> None:
+    def _persist(self, assessment: OpportunityAssessment) -> bool:
         key = (
             assessment.group_id,
             assessment.yes_leg.venue.value,
@@ -273,7 +277,7 @@ class Evaluator:
         )
         previous = self._written.get(key)
         if not should_persist_assessment(previous, assessment, now=assessment.computed_utc):
-            return
+            return False
 
         def apply(conn: sqlite3.Connection, assessment: OpportunityAssessment = assessment) -> None:
             insert_assessment(conn, assessment)
@@ -285,6 +289,7 @@ class Evaluator:
             net_profit=assessment.net_profit,
             written_utc=assessment.computed_utc,
         )
+        return True
 
 
 def _net_moved(previous: Decimal | None, current: Decimal | None, band: Decimal) -> bool:

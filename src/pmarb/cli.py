@@ -107,18 +107,108 @@ def _refuse_replay_output(
     database: Path,
     data_dir: Path,
     parser: argparse.ArgumentParser,
+    kind: str = "replay",
 ) -> None:
     """Refuse an output that overwrites the source, lands in docs/, or leaves the data dir."""
     output = Path(os.path.abspath(output))
     if _same_database(output, database):
-        parser.error("replay output cannot overwrite the source database")
+        parser.error(f"{kind} output cannot overwrite the source database")
     if _under_docs(output, _checkout_for(output, _repo_root())):
         parser.error(
-            "replay output contains recorded data and cannot be written "
+            f"{kind} output contains recorded data and cannot be written "
             "under the checkout docs/ directory"
         )
     if not _inside_directory(output, data_dir):
-        parser.error("replay output must stay inside the data dir")
+        parser.error(f"{kind} output must stay inside the data dir")
+
+
+def _sim_report(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    from pmarb.sim.report import render_sim_report
+
+    try:
+        rendered = render_sim_report(args.db, args.format)
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        print(f"FAIL sim report: {exc}", file=sys.stderr)
+        return 1
+    if args.out is None or args.out == "-":
+        print(rendered, end="" if rendered.endswith("\n") else "\n")
+        return 0
+    output = Path(args.out).expanduser()
+    try:
+        settings = load_settings(args.env_file)
+    except (ValidationError, OSError):
+        print("FAIL config: settings are invalid; check the PMARB_* configuration", file=sys.stderr)
+        return 1
+    _refuse_replay_output(output, Path(args.db), settings.data_dir, parser, kind="sim report")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(rendered, encoding="utf-8")
+    print(output)
+    return 0
+
+
+def _sim_run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    from decimal import Decimal
+
+    from pmarb.sim.engine import run_simulation
+
+    try:
+        settings = load_settings(args.env_file)
+    except (ValidationError, OSError):
+        print("FAIL config: settings are invalid; check the PMARB_* configuration", file=sys.stderr)
+        return 1
+    output = args.out.expanduser()
+    _refuse_replay_output(output, args.db.expanduser(), settings.data_dir, parser, kind="sim")
+    try:
+        delays = _integer_list(args.delays, "delays")
+        asymmetric = _delay_pairs(args.asymmetric)
+        haircuts = [Decimal(value) for value in args.haircut.split(",")]
+        result = run_simulation(
+            args.raw.expanduser(),
+            args.db.expanduser(),
+            output,
+            delays_ms=delays,
+            asymmetric=asymmetric,
+            haircuts=haircuts,
+            order=args.order,
+            jitter_ms=args.jitter_ms,
+            seed=args.seed,
+            cash_per_venue=Decimal(args.cash_per_venue),
+            settings=settings,
+        )
+    except (OSError, sqlite3.Error, ValueError, TypeError, RuntimeError, ArithmeticError) as exc:
+        print(f"FAIL sim: {exc}", file=sys.stderr)
+        return 1
+    print(
+        f"opportunities={result['opportunities']} trades={result['trades']} "
+        f"scenarios={result['scenarios']}\n{output}"
+    )
+    return 0
+
+
+def _integer_list(raw: str, label: str) -> list[int]:
+    try:
+        values = [int(value) for value in raw.split(",")]
+    except ValueError as exc:
+        raise ValueError(f"--{label} must be comma-separated integers") from exc
+    if not values or any(value < 0 for value in values):
+        raise ValueError(f"--{label} values must be non-negative")
+    return values
+
+
+def _delay_pairs(raw: str) -> list[tuple[int, int]]:
+    if not raw:
+        return []
+    pairs = []
+    try:
+        for item in raw.split(","):
+            left, right = item.split(":", maxsplit=1)
+            pair = (int(left), int(right))
+            if min(pair) < 0:
+                raise ValueError
+            pairs.append(pair)
+    except ValueError as exc:
+        raise ValueError("--asymmetric must use comma-separated YES:NO delay pairs") from exc
+    return pairs
 
 
 def _report(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
@@ -553,6 +643,25 @@ def main(argv: list[str] | None = None) -> None:
         sub.add_argument("--since", default=None, help="inclusive ISO-8601 lower bound on recv_utc")
         sub.add_argument("--until", default=None, help="inclusive ISO-8601 upper bound on recv_utc")
     replay_run.add_argument("--out", type=Path, required=True, help="new SQLite database to write")
+    sim = commands.add_parser("sim", help="simulate delayed fills against recorded books")
+    sim_commands = sim.add_subparsers(dest="sim_command", required=True)
+    sim_run = sim_commands.add_parser("run", help="run the latency and fill simulator")
+    sim_run.add_argument("--raw", type=Path, required=True, help="raw log root (contains raw/)")
+    sim_run.add_argument("--db", type=Path, required=True, help="source database, opened read-only")
+    sim_run.add_argument("--out", type=Path, required=True, help="new simulation SQLite database")
+    sim_run.add_argument("--delays", default="100,250,500,1000,2000")
+    sim_run.add_argument("--asymmetric", default="", help="optional YES:NO pairs, e.g. 100:250")
+    sim_run.add_argument("--haircut", default="0,0.25,0.5")
+    sim_run.add_argument("--order", choices=("fok", "ioc"), default="fok")
+    sim_run.add_argument("--jitter-ms", type=int, default=0)
+    sim_run.add_argument("--seed", type=int, default=0)
+    sim_run.add_argument("--cash-per-venue", default="10000")
+    sim_run.add_argument("--env-file", type=Path, default=argparse.SUPPRESS)
+    sim_report = sim_commands.add_parser("report", help="render simulation results")
+    sim_report.add_argument("--db", type=Path, required=True, help="simulation database")
+    sim_report.add_argument("--format", choices=("md", "json"), default="md")
+    sim_report.add_argument("--out", default=None, help="output path; use - for stdout")
+    sim_report.add_argument("--env-file", type=Path, default=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
     if args.command == "scan":
@@ -563,6 +672,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "replay":
         active = replay_run if args.replay_command == "run" else replay_verify
         raise SystemExit(_replay(args, active))
+    if args.command == "sim":
+        if args.sim_command == "run":
+            raise SystemExit(_sim_run(args, sim_run))
+        raise SystemExit(_sim_report(args, sim_report))
     if args.command == "report":
         raise SystemExit(_report(args, parser))
     if args.command == "review":

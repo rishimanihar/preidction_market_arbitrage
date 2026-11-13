@@ -21,7 +21,7 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -45,7 +45,7 @@ from pmarb.collector.registry import Registry, read_registry
 from pmarb.collector.runtime import ADAPTER_ERROR, FRESHNESS_INTERVAL_S, RECORDING_BACKPRESSURE
 from pmarb.collector.scheduler import build_poll_plan
 from pmarb.config import Settings
-from pmarb.models import Book, EquivalenceGroup, GroupStatus, Market, Venue
+from pmarb.models import Book, EquivalenceGroup, GroupStatus, Market, OpportunityAssessment, Venue
 from pmarb.replay.clock import LookaheadError, ReplayClock
 from pmarb.storage.db import Write, insert_collector_event, open_reader, open_writer
 from pmarb.storage.rawlog import (
@@ -343,6 +343,7 @@ class ReplayEngine:
         until: str | datetime | None = None,
         groups_from: str = "source_db",
         settings: Settings | None = None,
+        on_assessment: Callable[[int, OpportunityAssessment], None] | None = None,
     ) -> None:
         if groups_from != "source_db":
             raise ReplayError(f"unsupported groups_from: {groups_from!r}")
@@ -353,6 +354,7 @@ class ReplayEngine:
         self.until = _bound(until, "until")
         self.groups_from = groups_from
         self.settings = settings if settings is not None else Settings(_env_file=None)
+        self.on_assessment = on_assessment
         if self.since is not None and self.until is not None and self.since > self.until:
             raise ReplayError("since is after until")
         self._ran = False
@@ -457,6 +459,11 @@ class _Session:
             clock=self.clock,
             opens_episodes=lambda group_id: group_id in self._polled_ids,
             cadence_s=lambda: self.cadence_s,
+            on_assessment=(
+                (lambda assessment: engine.on_assessment(self.clock.mono_ns, assessment))
+                if engine.on_assessment is not None
+                else None
+            ),
         )
 
     def run(self) -> ReplayResult:
