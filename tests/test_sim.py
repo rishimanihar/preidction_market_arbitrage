@@ -372,6 +372,21 @@ def test_stale_arrival_book_cannot_create_a_fill(tmp_path: Path) -> None:
     assert all(row[7] == "neither" for row in _rows(output))
 
 
+def test_invalid_arrival_book_cannot_create_a_fill(tmp_path: Path) -> None:
+    records = _limited_pair(0, qty="1")
+    crossed = replay._poly_body("0.90", "0.30")
+    crossed["marketData"]["bids"][0]["px"]["value"] = "0.95"
+    records.append(replay._envelope("polymarket_us", "rest_book", 50_000_000, crossed))
+    raw, source = replay._hot(tmp_path, records)
+    output = tmp_path / "invalid.sqlite"
+
+    run_simulation(
+        raw, source, output, delays_ms=(100,), haircuts=(Decimal(0),), settings=replay._settings()
+    )
+
+    assert all(row[5] == "0" for row in _rows(output))
+
+
 def test_raw_gap_invalidates_pre_gap_books_until_a_new_snapshot(tmp_path: Path) -> None:
     records = _limited_pair(0, qty="1")
     records.append(replay._envelope("kalshi", "ws_msg", 50_000_000, {"tail": True}, status=None))
