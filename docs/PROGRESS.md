@@ -19,6 +19,13 @@ _Last updated: 2026-11-12 14:45 CST_
 - **Health:** most evaluations are rejected as `books_not_fresh`. Kalshi polls take about 3.4 s against a 4 s age limit and a 3 s budget, and there are ReadTimeout bursts while the network is flaky. `pmarb report` will show how much valid coverage this run produced.
 - **Power:** the laptop is on battery, and `-s` holds only on AC power.
 
+**Overnight 2026-11-13:**
+- **Evening soak stopped** cleanly at 02:35 CST after about 9 h. About 35 min was lost to laptop sleep. `pmarb report` and `pmarb sim` outputs are private under `data/`.
+- **Review #25:** findings answered on the issue. PR #27 contains the fixes, and Rishi's 7 acceptance checks pass.
+- **PR #26 (simulator):** audited and fixed. Haircut monotonicity, per-episode deduplication, arrival pricing, fees on both legs, and fresh-books-only fills are now enforced.
+- **Early signal:** the simulated edge stays positive from 100 to 2000 ms of delay. This is not evidence yet: it is one evening, with scenario fees and auto-reviewed groups.
+- **Gap:** `game_state` is empty during `pmarb scan`, because the recorder is not wired into the collector.
+
 **Earlier (13:30):**
 
 | PR | Item | State |
