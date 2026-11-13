@@ -38,6 +38,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from pmarb.matching.rules import HASH_VERSION, member_market_key, rules_hash
 from pmarb.models import EquivalenceGroup, ExceptionRow, GroupStatus, Market
+from pmarb.osutil import fsync_directory, portable_filename
 from pmarb.storage.db import format_utc, insert_review_log, upsert_group
 
 _log = logging.getLogger(__name__)
@@ -498,7 +499,9 @@ def _created_key(path: Path) -> tuple[datetime, str]:
 
 
 def _file_name(decision: ReviewDecision) -> str:
-    return f"{format_utc(decision.created_utc)}-{decision.group_id}-{decision.action}.json"
+    # Windows forbids ":" in file names; the body keeps the exact timestamp.
+    stamp = format_utc(decision.created_utc)
+    return portable_filename(f"{stamp}-{decision.group_id}-{decision.action}.json")
 
 
 def _decision_body(decision: ReviewDecision) -> dict[str, Any]:
@@ -551,11 +554,8 @@ def _atomic_write(dest: Path, payload: bytes) -> None:
 
 
 def _fsync_dir(path: Path) -> None:
-    fd = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+    # Skipped on Windows, where directories cannot be fsynced; see fsync_directory.
+    fsync_directory(path)
 
 
 def _move(path: Path, directory: Path) -> Path:

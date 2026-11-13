@@ -13,8 +13,24 @@ jobs:
           fetch-depth: 0
       - name: gitleaks (full history)
         run: |
-          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz | tar -xz gitleaks
+          version="8.30.1"
+          tarball="gitleaks_${version}_linux_x64.tar.gz"
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${version}"
+          curl -sSfL -o "$tarball" "${base}/${tarball}"
+          curl -sSfL -o checksums.txt "${base}/gitleaks_${version}_checksums.txt"
+          # Pinned SHA-256 of gitleaks_8.30.1_linux_x64.tar.gz from that release's checksums file.
+          pinned="551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+          echo "${pinned}  ${tarball}" | sha256sum -c -
+          grep -F "${pinned}  ${tarball}" checksums.txt
+          tar -xzf "$tarball" gitleaks
           ./gitleaks git . --no-banner --redact --config .gitleaks.toml
+      - name: no personal home paths
+        run: |
+          pattern="$(printf '%s%s%s%s' '/Users' '/' '|/' 'home/')"
+          if git grep -nE "$pattern" -- . ':(exclude)tests/fixtures'; then
+            echo "personal home paths found outside tests/fixtures" >&2
+            exit 1
+          fi
   test:
     runs-on: ubuntu-latest
     steps:
@@ -28,3 +44,53 @@ jobs:
           pip install -e '.[dev]'
           ruff check src tests
           pytest -q -m "not localdata"
+      - name: pip-audit (report only)
+        continue-on-error: true
+        run: |
+          python -m pip install pip-audit
+          python -m pip-audit
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: install
+        run: pip install -e '.[dev]'
+      - name: lint
+        run: ruff check src tests
+      - name: test
+        run: pytest -q -m "not localdata"
+      - name: Windows PowerShell 5.1 parses the deploy scripts
+        shell: powershell
+        run: |
+          $failed = $false
+          foreach ($script in Get-ChildItem deploy\windows\*.ps1) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($script.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            foreach ($e in $errors) {
+              Write-Host "$($script.Name):$($e.Extent.StartLineNumber): $($e.Message)"
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+      - name: install.ps1 dry run, install without starting, stop, uninstall
+        shell: powershell
+        run: |
+          py -3.12 --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          powershell -NoProfile -ExecutionPolicy RemoteSigned -File deploy\windows\install.ps1 -DryRun
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          powershell -NoProfile -ExecutionPolicy RemoteSigned -File deploy\windows\install.ps1
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $task = Get-ScheduledTask -TaskName pmarb-collector
+          Write-Host "state=$($task.State) limit=$($task.Settings.ExecutionTimeLimit) restart=$($task.Settings.RestartInterval) dir=$($task.Actions[0].WorkingDirectory)"
+          if ($task.Settings.ExecutionTimeLimit -ne 'PT0S' -or $task.Settings.RestartInterval -ne 'PT1M') { exit 1 }
+          icacls "$env:USERPROFILE\.config\pmarb\.env"
+          powershell -NoProfile -ExecutionPolicy RemoteSigned -File deploy\windows\stop.ps1
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          powershell -NoProfile -ExecutionPolicy RemoteSigned -File deploy\windows\install.ps1 -Uninstall
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if (Get-ScheduledTask -TaskName pmarb-collector -ErrorAction SilentlyContinue) { exit 1 }

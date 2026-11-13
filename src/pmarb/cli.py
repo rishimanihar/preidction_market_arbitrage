@@ -19,12 +19,15 @@ from pydantic import ValidationError
 from pmarb import __version__
 from pmarb.analysis.metrics import build_metrics
 from pmarb.analysis.report import render_report
+from pmarb.collector.stopfile import request_stop, wait_for_acknowledgement
 from pmarb.config import DEFAULT_ENV_FILE, Settings, load_settings
 from pmarb.diagnostics import deployment_checks
+from pmarb.osutil import is_windows
 from pmarb.secrets import SecretPolicyError, check_key_file
-from pmarb.storage.db import open_reader
+from pmarb.storage.db import open_reader, packaged_schema_version
 
-EXPECTED_SCHEMA_VERSION = 1
+# The packaged migrations' version; a fresh `open_writer` database has exactly this.
+EXPECTED_SCHEMA_VERSION = packaged_schema_version()
 DEFAULT_REVIEW_PORT = 8501
 
 
@@ -206,9 +209,12 @@ def _check_data_dir(data_dir: Path, repo_root: Path | None) -> list[str]:
                     break
             if resolved != lexical and not errors:
                 errors.append(f"data dir resolves through a symlink: {lexical}")
+            # A repo-relative POSIX path works with Git on every platform; an
+            # absolute Windows path with a trailing "/" mixes separators.
+            pathspec = (Path("data") / relative).as_posix().rstrip("/") + "/"
             try:
                 ignored = subprocess.run(
-                    ["git", "check-ignore", "-q", str(lexical) + "/"],
+                    ["git", "check-ignore", "-q", pathspec],
                     cwd=repo_root,
                     check=False,
                     timeout=5,
@@ -249,11 +255,18 @@ def _doctor(
         ("Polymarket US", settings.polyus_private_key_path),
     ):
         if key_path is not None:
+            warnings: list[str] = []
             try:
                 key_repo_root = repo_root or Path(__file__).resolve().parents[2]
-                check_key_file(key_path, key_repo_root)
+                check_key_file(
+                    key_path,
+                    key_repo_root,
+                    runner=command_runner,
+                    warnings=warnings,
+                )
             except (OSError, SecretPolicyError) as exc:
                 errors.append(f"{label} key file check failed: {exc}")
+            errors.extend(f"WARN {label} {warning}" for warning in warnings)
 
     database = _database_path(settings.data_dir)
     if not database.is_file():
@@ -271,7 +284,14 @@ def _doctor(
         importlib.import_module("streamlit")
     except ImportError as exc:
         errors.append(f"Streamlit import failed: {exc}")
-    errors.extend(deployment_checks(settings.data_dir, env_file, command_runner))
+    errors.extend(
+        deployment_checks(
+            settings.data_dir,
+            env_file,
+            command_runner,
+            repo_root=repo_root,
+        )
+    )
     return errors
 
 
@@ -310,8 +330,39 @@ def _run_review(port: int, env_file: Path | None = None) -> int:
         return 1
 
 
+def _stop(args: argparse.Namespace) -> int:
+    """Ask a running collector to stop through the stop-request file."""
+    try:
+        settings = load_settings(args.env_file)
+    except (ValidationError, OSError):
+        print("FAIL config: settings are invalid; check the PMARB_* configuration", file=sys.stderr)
+        return 1
+    if args.wait < 0:
+        print("FAIL --wait must be zero or more seconds", file=sys.stderr)
+        return 2
+    try:
+        path = request_stop(settings.data_dir)
+    except OSError as exc:
+        print(f"FAIL could not write the stop request: {exc}", file=sys.stderr)
+        return 1
+    print(f"OK stop requested: {path}")
+    if args.wait == 0:
+        print("The collector checks once per second, then drains its writes and exits.")
+        return 0
+    if wait_for_acknowledgement(path, args.wait):
+        print("OK collector stopped: writes drained and open episodes closed")
+        return 0
+    print(
+        f"WARN no collector acknowledged the stop request within {args.wait:g} s. "
+        "Check that it is running and uses this data dir "
+        f"({settings.data_dir}). A later collector start ignores this stale request.",
+        file=sys.stderr,
+    )
+    return 1
+
+
 def _scan(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    """Run the collector until a signal, or for one pass when ``--once`` is set."""
+    """Run the collector until a signal or ``pmarb stop``, or for one pass with ``--once``."""
     try:
         settings = load_settings()
     except (ValidationError, OSError):
@@ -370,6 +421,10 @@ def _scan(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         else:
             asyncio.run(collector.run())
     except KeyboardInterrupt:
+        # Ctrl+C before the collector's own handlers are installed (startup).
+        # Inside asyncio.run, asyncio cancels the collector first, and the
+        # cancellation runs the same drain as `pmarb stop`.
+        print("interrupted; collector stopped", file=sys.stderr)
         return
 
 
@@ -420,7 +475,27 @@ def _replay(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     return 0
 
 
+def _never_crash_on_console_encoding() -> None:
+    """Replace characters the Windows code page cannot encode instead of raising.
+
+    A piped stdout on Windows (for example, an assistant capturing a command's
+    output) uses the ANSI code page, and reports contain characters such as
+    "Θ" that it cannot encode. POSIX streams are left alone.
+    """
+    if not is_windows():
+        return
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(errors="replace")
+        except (OSError, ValueError):
+            continue
+
+
 def main(argv: list[str] | None = None) -> None:
+    _never_crash_on_console_encoding()
     parser = argparse.ArgumentParser(prog="pmarb")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--env-file", type=Path, default=None, help="settings file path")
@@ -453,6 +528,18 @@ def main(argv: list[str] | None = None) -> None:
     report.add_argument("--until", default=None, help="inclusive ISO timestamp upper bound")
     report.add_argument("--format", choices=("md", "json"), default="md")
     report.add_argument("--out", default=None, help="output path; use - for stdout")
+    stop = commands.add_parser(
+        "stop",
+        help="ask a running collector to drain its writes and exit (works without signals)",
+    )
+    stop.add_argument(
+        "--wait",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help="wait up to SECONDS for the collector to finish draining (default: do not wait)",
+    )
+    stop.add_argument("--env-file", type=Path, default=argparse.SUPPRESS, help="settings file path")
     replay = commands.add_parser("replay", help="replay a recorded raw log")
     replay_commands = replay.add_subparsers(dest="replay_command", required=True)
     replay_run = replay_commands.add_parser("run", help="replay into a new database")
@@ -471,6 +558,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "scan":
         _scan(args, scan)
         return
+    if args.command == "stop":
+        raise SystemExit(_stop(args))
     if args.command == "replay":
         active = replay_run if args.replay_command == "run" else replay_verify
         raise SystemExit(_replay(args, active))
@@ -518,7 +607,10 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"FAIL {finding}", file=sys.stderr)
         if failures:
             raise SystemExit(1)
-        print("OK config, data dir, disk, keys, database schema, Streamlit, logs, and env file")
+        print(
+            "OK config, data dir, disk, keys, database schema, Streamlit, time zones, logs, "
+            "and env file"
+        )
         return
     raise SystemExit(2)
 

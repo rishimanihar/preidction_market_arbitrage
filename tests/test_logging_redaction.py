@@ -1,6 +1,8 @@
 import io
 import json
 import logging
+import os
+import stat
 
 import pytest
 
@@ -124,6 +126,43 @@ def test_configure_logging_uses_log_dir_environment(monkeypatch, tmp_path) -> No
         for handler in [h for h in root.handlers if h.get_name() == "pmarb"]:
             root.removeHandler(handler)
             handler.close()
+
+
+def test_configured_secret_values_are_redacted(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("KALSHI_API_KEY_ID", "configured-key-id-xyz")
+    stream = io.StringIO()
+    root = configure_logging("INFO", stream=stream)
+    try:
+        handlers = [handler for handler in root.handlers if handler.get_name() == "pmarb"]
+        assert handlers
+        assert all(any(isinstance(item, RedactingFilter) for item in h.filters) for h in handlers)
+        logging.getLogger("pmarb.cfg").info("using configured-key-id-xyz")
+    finally:
+        for handler in [handler for handler in root.handlers if handler.get_name() == "pmarb"]:
+            root.removeHandler(handler)
+            handler.close()
+    assert "configured-key-id-xyz" not in stream.getvalue()
+    assert MASK in stream.getvalue()
+
+
+def test_log_dir_and_file_ignore_umask(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("PMARB_LOG_DIR", raising=False)
+    log_dir = tmp_path / "nested" / "logs"
+    previous = os.umask(0)
+    root = None
+    try:
+        root = configure_logging("INFO", log_dir=log_dir)
+        logging.getLogger("pmarb.perms").info("hello")
+        for handler in [handler for handler in root.handlers if handler.get_name() == "pmarb"]:
+            handler.flush()
+        assert stat.S_IMODE(log_dir.stat().st_mode) == 0o700
+        assert stat.S_IMODE((log_dir / "pmarb.log").stat().st_mode) == 0o600
+    finally:
+        os.umask(previous)
+        if root is not None:
+            for handler in [handler for handler in root.handlers if handler.get_name() == "pmarb"]:
+                root.removeHandler(handler)
+                handler.close()
 
 
 def test_service_configures_log_dir_before_scan(monkeypatch, tmp_path) -> None:

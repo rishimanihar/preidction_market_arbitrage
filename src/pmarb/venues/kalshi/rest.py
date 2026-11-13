@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import UTC, datetime, timedelta
@@ -16,9 +17,9 @@ from pmarb.fees.scenario import (
     account_fee_value,
     with_scenario,
 )
-from pmarb.http import ObservationHttpClient
+from pmarb.http import ObservationHttpClient, UnexpectedStatusError
 from pmarb.models import Book, Market, Venue
-from pmarb.protocols import BookEvent, FeeModel
+from pmarb.protocols import BookEvent, FeeModel, collect_books
 from pmarb.venues.kalshi.parse import SERIES_LEAGUES, is_eligible, parse_book, parse_market
 
 BASE_URL = "https://external-api.kalshi.com/trade-api/v2"
@@ -60,19 +61,29 @@ class KalshiAdapter:
         *,
         purpose: str,
         params: dict[str, Any] | None = None,
+        route: str | None = None,
     ) -> tuple[Any, dict[str, str]]:
+        """GET ``path``. ``route`` is the id-free label used in errors (default ``path``)."""
+        route = route or path
         result = await self.http.get(
-            f"{BASE_URL}{path}", venue="kalshi", purpose=purpose, params=params
+            f"{BASE_URL}{path}", venue="kalshi", purpose=purpose, params=params, route=route
         )
         if not 200 <= result.status_code < 300:
-            raise RuntimeError(f"Kalshi GET {path} returned HTTP {result.status_code}")
+            raise UnexpectedStatusError(
+                f"Kalshi GET {route} returned HTTP {result.status_code}",
+                status_code=result.status_code,
+                venue="kalshi",
+                route=route,
+            )
         return result.json(), dict(result.headers)
 
     async def _series(self, ticker: str) -> dict[str, Any]:
         cached = self._series_cache.get(ticker)
         if cached is not None:
             return cached
-        payload, _ = await self._get_json(f"/series/{quote(ticker, safe='')}", purpose="discovery")
+        payload, _ = await self._get_json(
+            f"/series/{quote(ticker, safe='')}", purpose="discovery", route="/series/{ticker}"
+        )
         series = payload.get("series") if isinstance(payload, dict) else None
         if not isinstance(series, dict):
             raise TypeError("Kalshi series response has no series object")
@@ -83,7 +94,9 @@ class KalshiAdapter:
         cached = self._event_cache.get(ticker)
         if cached is not None:
             return cached
-        payload, _ = await self._get_json(f"/events/{quote(ticker, safe='')}", purpose="discovery")
+        payload, _ = await self._get_json(
+            f"/events/{quote(ticker, safe='')}", purpose="discovery", route="/events/{ticker}"
+        )
         event = payload.get("event") if isinstance(payload, dict) else None
         if not isinstance(event, dict):
             raise TypeError("Kalshi event response has no event object")
@@ -187,7 +200,9 @@ class KalshiAdapter:
                     yield market
 
     async def get_market(self, ticker: str) -> Market:
-        payload, _ = await self._get_json(f"/markets/{quote(ticker, safe='')}", purpose="discovery")
+        payload, _ = await self._get_json(
+            f"/markets/{quote(ticker, safe='')}", purpose="discovery", route="/markets/{ticker}"
+        )
         raw = payload.get("market") if isinstance(payload, dict) else None
         if not isinstance(raw, dict):
             raise TypeError("Kalshi market detail response has no market object")
@@ -202,52 +217,69 @@ class KalshiAdapter:
         return parse_market(raw, series, event)
 
     async def get_books(self, market_ids: Sequence[str]) -> list[Book]:
+        """Batched books, up to 100 tickers per request; batches run concurrently.
+
+        A failed batch does not discard the others: the collector gets
+        :class:`~pmarb.protocols.PartialBooksError` with the books that arrived.
+        """
         tickers = list(dict.fromkeys(market_ids))
-        books: dict[str, Book] = {}
-        for offset in range(0, len(tickers), BOOK_BATCH_SIZE):
-            chunk = tickers[offset : offset + BOOK_BATCH_SIZE]
-            payload, headers = await self._get_json(
-                "/markets/orderbooks",
-                purpose="books",
-                params={"tickers": chunk},
+        chunks = [
+            tickers[offset : offset + BOOK_BATCH_SIZE]
+            for offset in range(0, len(tickers), BOOK_BATCH_SIZE)
+        ]
+        results = await asyncio.gather(
+            *(self._book_chunk(chunk) for chunk in chunks), return_exceptions=True
+        )
+        books = {
+            book.market_id: book
+            for book in collect_books(self.venue, list(zip(chunks, results, strict=True)))
+        }
+        return [books[ticker] for ticker in tickers if ticker in books]
+
+    async def _book_chunk(self, chunk: list[str]) -> list[Book]:
+        payload, headers = await self._get_json(
+            "/markets/orderbooks",
+            purpose="books",
+            params={"tickers": chunk},
+        )
+        rows = payload.get("orderbooks") if isinstance(payload, dict) else None
+        if not isinstance(rows, list):
+            raise TypeError("Kalshi batch orderbook response has no orderbooks list")
+        returned = [row.get("ticker") for row in rows if isinstance(row, dict)]
+        if (
+            len(returned) != len(rows)
+            or any(not isinstance(ticker, str) for ticker in returned)
+            or len(set(returned)) != len(returned)
+        ):
+            raise ValueError(
+                "Kalshi batch orderbook response contains invalid or duplicate tickers"
             )
-            rows = payload.get("orderbooks") if isinstance(payload, dict) else None
-            if not isinstance(rows, list):
-                raise TypeError("Kalshi batch orderbook response has no orderbooks list")
-            returned = [row.get("ticker") for row in rows if isinstance(row, dict)]
-            if (
-                len(returned) != len(rows)
-                or any(not isinstance(ticker, str) for ticker in returned)
-                or len(set(returned)) != len(returned)
-            ):
-                raise ValueError(
-                    "Kalshi batch orderbook response contains invalid or duplicate tickers"
-                )
-            if set(returned) != set(chunk):
-                missing = sorted(set(chunk) - set(returned))
-                unexpected = sorted(set(returned) - set(chunk))
-                raise ValueError(
-                    f"Kalshi batch orderbook ticker mismatch: missing={missing}, unexpected={unexpected}"
-                )
-            received_utc = _utc(self._clock_utc())
-            received_monotonic = self._monotonic()
-            for row in rows:
-                ticker = row["ticker"]
-                orderbook_fp = row.get("orderbook_fp")
-                if not isinstance(orderbook_fp, dict):
-                    raise TypeError(f"Kalshi orderbook for {ticker!r} has no orderbook_fp object")
-                book = parse_book(
-                    orderbook_fp,
-                    ticker=ticker,
-                    received_utc=received_utc,
-                    received_monotonic=received_monotonic,
-                    connection_generation=self.connection_generation,
-                    cache_headers=headers,
-                )
-                books[ticker] = book.model_copy(
-                    update={"raw_native": {**payload, "cache_headers": dict(headers)}}
-                )
-        return [books[ticker] for ticker in tickers]
+        if set(returned) != set(chunk):
+            missing = sorted(set(chunk) - set(returned))
+            unexpected = sorted(set(returned) - set(chunk))
+            raise ValueError(
+                f"Kalshi batch orderbook ticker mismatch: missing={missing}, unexpected={unexpected}"
+            )
+        received_utc = _utc(self._clock_utc())
+        received_monotonic = self._monotonic()
+        books: list[Book] = []
+        for row in rows:
+            ticker = row["ticker"]
+            orderbook_fp = row.get("orderbook_fp")
+            if not isinstance(orderbook_fp, dict):
+                raise TypeError(f"Kalshi orderbook for {ticker!r} has no orderbook_fp object")
+            book = parse_book(
+                orderbook_fp,
+                ticker=ticker,
+                received_utc=received_utc,
+                received_monotonic=received_monotonic,
+                connection_generation=self.connection_generation,
+                cache_headers=headers,
+            )
+            books.append(
+                book.model_copy(update={"raw_native": {**payload, "cache_headers": dict(headers)}})
+            )
+        return books
 
     def book_stream(self, market_ids: Sequence[str]) -> AsyncIterator[BookEvent] | None:
         """Streaming is a later milestone; M1 polls REST."""

@@ -8,8 +8,8 @@ Defaults: --repo is the parent of deploy/, --data-dir is REPO/data.
 EOF
 }
 
-SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd -P)
-DEFAULT_REPO=$(CDPATH= cd "$SCRIPT_DIR/.." && pwd -P)
+SCRIPT_DIR=$(CDPATH='' cd "$(dirname "$0")" && pwd -P)
+DEFAULT_REPO=$(CDPATH='' cd "$SCRIPT_DIR/.." && pwd -P)
 REPO=$DEFAULT_REPO
 DATA_DIR=
 START=0
@@ -37,7 +37,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$REPO" in -*) REPO=./$REPO ;; esac
-REPO=$(CDPATH= cd "$REPO" && pwd -P)
+REPO=$(CDPATH='' cd "$REPO" && pwd -P)
 if [ -z "$DATA_DIR" ]; then DATA_DIR=$REPO/data; fi
 case "$DATA_DIR" in
   /*) ;;

@@ -8,6 +8,7 @@ import streamlit as st
 
 from pmarb.app.pages.common import query_page, show_value
 from pmarb.app.queries import fetch_candidates
+from pmarb.http import allowed_market_url
 
 
 def render() -> None:
@@ -34,12 +35,12 @@ def render() -> None:
             members = row.get("members") or []
             if members:
                 for member in members:
-                    st.markdown(
-                        f"**{member.get('venue', 'Market')}** · "
-                        f"{member.get('title') or member.get('market_key', 'unknown')}"
-                    )
-                    if member.get("url"):
-                        st.link_button("Open market", member["url"])
+                    venue = str(member.get("venue") or "Market")
+                    title = str(member.get("title") or member.get("market_key") or "unknown")
+                    st.text(f"{venue} · {title}")
+                    link = allowed_market_url(member.get("url"))
+                    if link is not None:
+                        st.link_button("Open market", link)
                     st.caption(f"Match key: {member.get('market_key', 'unavailable')}")
                     if member.get("yes_maps_to"):
                         st.caption(f"YES mapping: {member['yes_maps_to']}")

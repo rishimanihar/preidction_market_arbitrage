@@ -27,6 +27,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from pmarb.osutil import fsync_directory
+
 KINDS = frozenset({"rest_book", "ws_msg", "market", "conn", "checkpoint", "gamestate"})
 DEFAULT_MAX_BYTES = 20 * 1024**3
 DEFAULT_MAX_AGE_DAYS = 30
@@ -78,7 +80,7 @@ class Envelope:
     def __post_init__(self) -> None:
         if self.kind not in KINDS:
             raise ValueError(f"unknown envelope kind: {self.kind!r}")
-        if not _VENUE_RE.match(self.venue):
+        if _VENUE_RE.fullmatch(self.venue) is None:
             raise ValueError(f"unsafe venue name: {self.venue!r}")
 
     def to_json(self) -> str:
@@ -117,11 +119,8 @@ def _encode_member(env: Envelope) -> bytes:
 
 
 def _fsync_dir(path: Path) -> None:
-    fd = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+    # Skipped on Windows, where directories cannot be fsynced; see fsync_directory.
+    fsync_directory(path)
 
 
 def _hour_of(path: Path) -> datetime | None:

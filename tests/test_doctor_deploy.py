@@ -1,8 +1,14 @@
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from pmarb import diagnostics
+
+# POSIX permission bits do not exist on Windows; tests/test_windows.py covers the ACL checks.
+posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
 
 
 def test_macos_sntp_offset_is_reported_and_warns_above_threshold() -> None:
@@ -87,6 +93,7 @@ def test_deployment_checks_require_logs_and_exact_env_mode(tmp_path: Path) -> No
     assert any(item.startswith("WARN clock") for item in findings)
 
 
+@posix_only
 def test_deployment_checks_accept_logs_and_env_mode_600(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     logs = data_dir / "logs"

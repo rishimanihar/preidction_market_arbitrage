@@ -3,6 +3,7 @@ import json
 import pytest
 
 from pmarb.app.decisions import build_decision, write_decision
+from pmarb.osutil import portable_filename
 
 STAMP = "2026-11-12T05:07:01Z"
 TABLE = [
@@ -35,7 +36,8 @@ def test_approve_requires_explicit_acknowledgment():
 def test_decision_is_atomic_json_with_exact_schema(tmp_path):
     decision = _decision()
     target = write_decision(tmp_path, decision)
-    assert target == tmp_path / "spool" / "reviews" / f"{STAMP}-group-1-approve.json"
+    name = portable_filename(f"{STAMP}-group-1-approve.json")
+    assert target == tmp_path / "spool" / "reviews" / name
     assert json.loads(target.read_text()) == decision
     assert set(json.loads(target.read_text())) == {
         "group_id",
@@ -86,7 +88,7 @@ def test_writer_revalidates_manual_payload_types(tmp_path):
 def test_fsync_happens_before_rename(tmp_path, monkeypatch):
     import os
 
-    from pmarb.app import decisions
+    from pmarb.review import spool
 
     calls = []
     real_fsync = os.fsync
@@ -100,19 +102,19 @@ def test_fsync_happens_before_rename(tmp_path, monkeypatch):
         calls.append("replace")
         return real_replace(source, target)
 
-    monkeypatch.setattr(decisions.os, "fsync", record_fsync)
-    monkeypatch.setattr(decisions.os, "replace", record_replace)
+    monkeypatch.setattr(spool.os, "fsync", record_fsync)
+    monkeypatch.setattr(spool.os, "replace", record_replace)
     write_decision(tmp_path, _decision())
     assert calls.index("fsync") < calls.index("replace")
 
 
 def test_rename_failure_leaves_no_decision_or_temp_file(tmp_path, monkeypatch):
-    from pmarb.app import decisions
+    from pmarb.review import spool
 
     def fail_replace(_source, _target):
         raise OSError("synthetic rename failure")
 
-    monkeypatch.setattr(decisions.os, "replace", fail_replace)
+    monkeypatch.setattr(spool.os, "replace", fail_replace)
     with pytest.raises(OSError, match="rename"):
         write_decision(tmp_path, _decision())
     spool = tmp_path / "spool" / "reviews"

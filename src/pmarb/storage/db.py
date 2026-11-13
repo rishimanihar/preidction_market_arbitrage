@@ -19,7 +19,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import queue as thread_queue
 import re
 import sqlite3
@@ -41,6 +40,7 @@ from pmarb.models import (
     Market,
     OpportunityAssessment,
 )
+from pmarb.osutil import fsync_directory
 
 if TYPE_CHECKING:
     from pmarb.gamestate.kalshi_live import GameState
@@ -123,11 +123,8 @@ def _opt_dt(value: datetime | None) -> str | None:
 
 
 def _fsync_dir(path: Path) -> None:
-    fd = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+    # Skipped on Windows, where directories cannot be fsynced; see fsync_directory.
+    fsync_directory(path)
 
 
 def _ensure_parent(path: Path) -> None:
@@ -193,6 +190,11 @@ def _migration_scripts() -> list[tuple[int, str, str]]:
 
 def _known_version() -> int:
     return _migration_scripts()[-1][0]
+
+
+def packaged_schema_version() -> int:
+    """The ``schema_version`` that :func:`open_writer` migrates a database to."""
+    return _known_version()
 
 
 def _read_version(conn: sqlite3.Connection) -> int | None:

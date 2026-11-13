@@ -2,6 +2,10 @@
 
 Use a machine you control for long recordings. The collector is an observer; review its recorded data before drawing conclusions.
 
+This page covers macOS and Linux. **For Windows, follow [RUN_ON_WINDOWS.md](RUN_ON_WINDOWS.md).** It uses `deploy\windows\install.ps1` and a Task Scheduler task, and is written so an AI assistant can follow it step by step.
+
+On every platform, `pmarb stop [--wait SECONDS]` asks a running collector to shut down cleanly, with no signals needed. It writes `<data dir>/collector.stop`. The collector checks for that file once a second, closes open episodes with `collector_shutdown`, drains the raw log and the database, and then deletes the file.
+
 ## Prerequisites and install
 
 Install Python 3.12 or newer and Git. In a checkout with the project dependencies installed, create the virtual environment and install the package:

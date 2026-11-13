@@ -2,7 +2,7 @@
 
 This is the build's living status: what's done, what we've learned that isn't in the plan yet, and what comes next. **Update it at every milestone step.** Read it alongside `docs/IMPLEMENTATION_PLAN.md` (what we're building) and `docs/research/` (why).
 
-_Last updated: 2026-11-12 14:08 CST_
+_Last updated: 2026-11-12 14:45 CST_
 
 ## Status (2026-11-12 13:30 CST)
 
@@ -49,6 +49,24 @@ _Last updated: 2026-11-12 14:08 CST_
    - Fix in progress on `m1/livefix`.
 8. **Polymarket US `comboEnabled` means "usable as a combo leg".** Excluding it found 0 live markets (D29, fixed).
 9. **Scenario fees (D30) are needed while nobody has accounts.** Without them every assessment is `fee_unknown`, so no episode can open.
+10. **The `RetriesExhaustedError` book-poll failures (`m1/retry-fix`).** A 12-minute collector reproduction in the same afternoon window showed transient network trouble hitting **both venues at once**: Kalshi gave 5 consecutive `ConnectTimeout`s, Polymarket US gave `ssl.SSLError` (`SSLV3_ALERT_BAD_RECORD_MAC`), and there were multi-second stalls on both. The event loop and the writers were not blocked. The retry path turned each blip into a long outage:
+    - Retries ran up to about 30 s per poll (27.4 s observed) against a 2 s freshness window, and `gather` held the healthy venue's books until the failing venue finished.
+    - A raw `ssl.SSLError` was not retried at all.
+    - One failed Polymarket US market failed the whole venue and left the other requests retrying in the background, using the next cycle's book tokens.
+    - The log printed only the exception class.
+
+    Fixes:
+    - A per-fetch budget of 0.75 × the freshness window.
+    - A shared per-`(venue, purpose)` backoff that honours `Retry-After` across cycles.
+    - Partial results.
+    - Books accepted per venue as soon as that venue's fetch returns.
+    - Fixed-rate cycles.
+    - Errors that carry cause, attempts, elapsed time, and endpoint, and health counters by cause.
+
+    The old "sleep the cadence after the work" loop also gave a 2.8 s period against a 2 s window: 1,413 `books_not_fresh` in 12 min, down to 183 after the fix. Timeouts were not the problem: a 100-ticker Kalshi batch took 247 ms median, 560 ms max. The httpx pool limits were not the problem either.
+11. **Polymarket US public books are served from Cloudflare's cache.** The responses carry `cache-control: public, max-age=30`. In a 5-minute probe, 1,190 of 1,200 book responses were `cf-cache-status: HIT`, with `Age` up to 29 s (median 15 s). Book age measured from local receipt therefore understates true age by up to 30 s. **Undecided:** record `Age`/`cf-cache-status` and treat them in freshness, mark such books cached, or rely on the M2 stream.
+12. **Evaluation runs on the event loop**: about 0.25 s per call for 4 groups, plus a re-evaluation on every 250 ms freshness tick. Health `loop_lag_max_s` reaches about 1.2 s, and that lag is what leaves the remaining `books_not_fresh`.
+13. **`pmarb doctor` rejected every fresh database.** Its schema check was pinned to version 1, but migration 0002 (game state) makes a fresh database version 2. The check now derives the expected version from the packaged migrations (fixed on `m1/windows`).
 
 ## Engineering conventions learned the hard way
 
@@ -61,8 +79,12 @@ _Last updated: 2026-11-12 14:08 CST_
 
 ## Next steps (start of next session)
 
-1. **Investigate `RetriesExhaustedError`.** The first Mac soak (about 13:55–14:07, stopped cleanly for the day) logged 8 book-poll failures for both venues. It is unclear whether this was a network blip, rate limiting, or a bug in the retry or timeout path. Check `data/soak-2026-11-12/collector.out`, the health events, and the HTTP error counts before the next run.
-2. **Windows support** (`m1/windows`, Grok xhigh, paused mid-task at 14:08). The worktree `/Users/avynarra/Documents/pmarb-worktrees/windows` holds partial uncommitted work. The brief is `/Users/avynarra/Documents/pmarb-worktrees/briefs/windows.md`. Resume by re-running it (tell the worker to review the existing changes first), then review, push, and confirm the Windows CI job passes.
+1. **`RetriesExhaustedError` is fixed on `m1/integration`** (learned item 10). On the next soak:
+   - read `adapter_error` events: `cause`, `history`, `attempts`, `elapsed_s`, `endpoint`;
+   - read health: `poll_failures_by_cause`, `http`, `loop_lag_max_s`.
+
+   Follow-ups: decide on the Polymarket US CDN cache (item 11) and take evaluation off the event loop (item 12).
+2. **Windows support is on `m1/integration`.** It adds `tzdata`, Windows signal handling and `pmarb stop`, `icacls` checks, a skip of directory fsync on Windows, a `w32tm` clock check, `deploy/windows/` (Task Scheduler), `docs/RUN_ON_WINDOWS.md`, and a `windows-latest` CI job. Next: confirm that CI job is green, then do a first real-PC run by following the runbook.
 3. **Start the real soak.** Run `pmarb scan` across an evening slate. Short term: this Mac with `caffeinate -is`. Long term: Rishi's Windows desktop, via `docs/RUN_ON_WINDOWS.md` once it lands. Then run `pmarb report`.
 4. **Open the integration PR** (`m1/integration` → `main`) once Rishi has reviewed the stacked PRs, or let him merge the stack in order.
 5. **M2:** wire the streams into the collector. Change `depth_unconfirmed` to valid + non-atomic. This needs API keys.

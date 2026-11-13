@@ -14,6 +14,8 @@ dependencies = [
     "websockets==17.4",
     "cryptography==50.0.2",
     "streamlit==1.67.0",
+    # Windows ships no IANA time zone database; zoneinfo reads it from tzdata.
+    "tzdata==2026.6; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

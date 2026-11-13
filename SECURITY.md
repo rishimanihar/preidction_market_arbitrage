@@ -10,7 +10,8 @@ This repository is **public**. Anything committed, even briefly, should be treat
 
 ## Where credentials live
 - Private keys: files under `~/.config/pmarb/` with mode `600`. Config refers to them by path (see `.env.example`).
-- The application must refuse to start if a key file is inside the repository, is group/world readable, or if a secret value appears in a config file tracked by git.
+- On Windows, mode bits do not apply. Key files and the settings file live under `%USERPROFILE%\.config\pmarb\`. Their ACLs are restricted to the owner with `icacls <file> /inheritance:r /grant:r "*<your SID>:(R)"`. The checks refuse a file that Everyone, Users, BUILTIN\Users or Authenticated Users can read, read the ACL through `icacls`, and warn loudly when `icacls` cannot run (see `docs/RUN_ON_WINDOWS.md`).
+- The application must refuse to start if a key file is inside the repository, is group/world readable (on Windows: readable by a broad group), or if a secret value appears in a config file tracked by git.
 - Each person uses their own venue account and their own API key. Never share keys between people.
 - Use the narrowest scope each venue offers (Kalshi `read`; Polymarket US read-only if available). Observation and replay never need trading permission. Trading keys are out of scope until the live-execution milestone is explicitly approved.
 - Never paste keys into chats, issues, PRs, commit messages, or AI agent prompts.

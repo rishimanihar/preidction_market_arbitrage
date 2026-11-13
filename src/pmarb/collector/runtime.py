@@ -20,6 +20,15 @@ open episodes.
 ``maintenance`` (once, on entering the window), and ``collector_shutdown``.
 Book invalid reasons also include ``stale``, ``cached``, ``adapter_error``,
 and ``generation``. A heartbeat does not refresh book age.
+
+Book polls are bounded and isolated per venue. Each venue's fetch gets a time
+budget below the batch's freshness window (``poll_fetch_budget_fraction``).
+The HTTP client stops retrying at that deadline, and a clock-based backstop
+cancels an adapter that overruns it. Each venue's books are accepted, and
+stamped, as soon as that venue's fetch returns, so a slow or failing venue
+neither delays nor ages the other venue's books. Cycles run at a fixed rate:
+the next one starts ``sleep_s`` after the previous one started, not after it
+ended. Failures are counted by cause (``poll_failures_by_cause`` in health).
 """
 
 from __future__ import annotations
@@ -29,10 +38,13 @@ import inspect
 import logging
 import signal
 import sqlite3
+import threading
+import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import FrameType
 from typing import Any, Protocol
 from urllib.parse import quote
 
@@ -47,12 +59,13 @@ from pmarb.collector.freshness import (
     is_fresh,
     max_age_for,
 )
-from pmarb.collector.scheduler import PollPlan, build_poll_plan, market_ids
+from pmarb.collector.scheduler import PollPlan, ScheduledGroup, build_poll_plan, market_ids
 from pmarb.collector.supervisor import RestartBackoff, supervise
 from pmarb.config import Settings
-from pmarb.http import Backoff
+from pmarb.http import Backoff, Deadline, failure_cause, failure_detail, request_deadline
 from pmarb.models import Book, EquivalenceGroup, GroupStatus, Market, Venue
-from pmarb.protocols import VenueAdapter
+from pmarb.osutil import is_windows
+from pmarb.protocols import PartialBooksError, VenueAdapter
 from pmarb.storage.db import DbWriterTask, Write, insert_collector_event
 from pmarb.storage.rawlog import Envelope, RawLogTask, disk_free_bytes
 from pmarb.venues.polymarket_us.maintenance import in_maintenance
@@ -67,11 +80,26 @@ DEFAULT_BACKPRESSURE_LOW_WATER = 10_000
 DEFAULT_QUEUE_LIMIT = DEFAULT_BACKPRESSURE_HIGH_WATER
 BACKPRESSURE_SUSTAINED_S = 5.0
 
+# The HTTP client stops at the fetch deadline itself. The backstop only fires
+# for an adapter that does not honour it, a little later so the client's richer
+# error wins the race.
+FETCH_BACKSTOP_GRACE_S = 0.25
+# A repeated failure with the same cause is logged at WARNING once per this
+# many polls (every poll is still a collector event).
+ERROR_LOG_REPEAT_EVERY = 10
+
 RECORDING_BACKPRESSURE = "recording_backpressure"
 ADAPTER_ERROR = "adapter_error"
+ADAPTER_RECOVERED = "adapter_recovered"
 COLLECTOR_SHUTDOWN = "collector_shutdown"
 LOOP_CRASH = "loop_crash"
 HEALTH = "health"
+STOP_REQUESTED = "stop_requested"
+STOP_REQUEST_STALE = "stop_request_stale"
+STOP_REQUEST_INTERVAL_S = 1.0
+# A request written this soon before the collector was created still counts.
+# It covers coarse file timestamps (FAT keeps 2 s) and `pmarb stop` racing a start.
+STOP_REQUEST_GRACE_S = 2.0
 
 # Process-wide invalidations. A later freshness pass must not relabel them.
 _PROCESS_REASONS = frozenset({CLOCK_JUMP, RECORDING_BACKPRESSURE, GENERATION, ADAPTER_ERROR})
@@ -80,6 +108,9 @@ BooksHook = Callable[[set[str]], Awaitable[None] | None]
 GapHook = Callable[[str], Awaitable[None] | None]
 StartupHook = Callable[[], Awaitable[None] | None]
 _SIGNALS = (signal.SIGINT, signal.SIGTERM)
+# Windows has no loop.add_signal_handler. Console Ctrl+C is SIGINT and
+# Ctrl+Break is SIGBREAK, which exists only in the Windows signal module.
+_WIN32_SIGNAL_NAMES = ("SIGINT", "SIGBREAK")
 
 
 def _once_sample_key(start: datetime | None, now: datetime) -> tuple[int, float]:
@@ -90,6 +121,20 @@ def _once_sample_key(start: datetime | None, now: datetime) -> tuple[int, float]
     if seconds >= 0:
         return (0, seconds)
     return (1, -seconds)
+
+
+class FetchBudgetExceededError(Exception):
+    """An adapter's ``get_books`` was still running after its poll budget."""
+
+    def __init__(self, venue: Venue, budget_s: float, requested: int) -> None:
+        super().__init__(
+            f"{venue} get_books for {requested} markets did not return within its "
+            f"{budget_s:.2f}s poll budget"
+        )
+        self.venue = venue
+        self.budget_s = budget_s
+        self.requested = requested
+        self.cause = "budget_exceeded"
 
 
 class DiscoveryLoop(Protocol):
@@ -118,6 +163,14 @@ class Collector:
     Adapters, clock, writers, and the evaluator hooks are injected. ``stop``
     cancels the pollers, calls ``on_gap("collector_shutdown")``, then cancels
     the raw-log and database tasks so they drain and fsync.
+
+    Three things trigger ``stop`` from outside:
+
+    - SIGINT or SIGTERM through ``loop.add_signal_handler`` on POSIX;
+    - SIGINT or SIGBREAK through ``signal.signal`` on Windows, which hands the
+      stop to the loop with ``call_soon_threadsafe``;
+    - a fresh ``stop_file`` (see :mod:`pmarb.collector.stopfile`), checked once
+      a second on every platform.
     """
 
     def __init__(
@@ -145,7 +198,11 @@ class Collector:
         discovery: DiscoveryLoop | None = None,
         on_startup: StartupHook | None = None,
         on_stopped: StartupHook | None = None,
+        stop_file: Path | None = None,
+        stop_poll_interval_s: float = STOP_REQUEST_INTERVAL_S,
     ) -> None:
+        if stop_poll_interval_s <= 0:
+            raise ValueError("stop_poll_interval_s must be > 0")
         if queue_limit < 0:
             raise ValueError("queue_limit must be >= 0")
         if raw_task is not None:
@@ -187,6 +244,12 @@ class Collector:
         self._discovery = discovery
         self._on_startup = on_startup
         self._on_stopped = on_stopped
+        self._stop_file = stop_file
+        self._stop_poll_interval_s = stop_poll_interval_s
+        # Real wall time, because file mtimes are real. A request older than
+        # this collector was left behind by an earlier run and is stale.
+        self._created_epoch = time.time()
+        self._stop_file_seen = False
         self._groups: tuple[EquivalenceGroup, ...] = ()
         self._markets: tuple[Market, ...] = ()
         self.set_universe(groups, markets)
@@ -198,6 +261,11 @@ class Collector:
         self.sleep_s = self.cadence_s
         self.error_count = 0
         self.http_429_count = 0
+        # venue -> failure cause (http_503, ConnectTimeout, cooldown, ...) -> count
+        self.poll_failures: dict[str, dict[str, int]] = {}
+        self._failure_streak: dict[str, int] = {}
+        self._streak_cause: dict[str, str] = {}
+        self._loop_lag_max_s = 0.0
         self.plan: PollPlan | None = None
 
         self._polled_ids: frozenset[str] = frozenset()
@@ -216,7 +284,9 @@ class Collector:
         self._stop_lock: asyncio.Lock | None = None
         self._stopped: asyncio.Event | None = None
         self._signals: list[signal.Signals] = []
+        self._previous_handlers: dict[int, Any] = {}
         self._signal_task: asyncio.Task[None] | None = None
+        self._stop_file_task: asyncio.Task[None] | None = None
         self._poll_task: asyncio.Task[None] | None = None
         self._fresh_task: asyncio.Task[None] | None = None
         self._health_task: asyncio.Task[None] | None = None
@@ -336,6 +406,9 @@ class Collector:
                         if self._on_stopped is not None:
                             await _call(self._on_stopped)
                     finally:
+                        # The writers have drained; deleting the request tells
+                        # `pmarb stop --wait` that shutdown is complete.
+                        self._acknowledge_stop_request()
                         self._stopped.set()
 
     async def _run_startup(self) -> None:
@@ -394,6 +467,11 @@ class Collector:
                 supervise("discovery", self._discovery.run, **common),
                 name="collector-discovery",
             )
+        if self._stop_file is not None:
+            self._stop_file_task = asyncio.create_task(
+                supervise("stop_request", self._stop_request_loop, **common),
+                name="collector-stop-request",
+            )
 
     async def _run_db(self) -> None:
         assert self._db_task is not None
@@ -422,16 +500,24 @@ class Collector:
 
     async def _poll_loop(self) -> None:
         while not self._stopping:
+            started = self._clock.monotonic()
             await self._poll_once()
             if self._stopping:
                 return
-            await self._clock.sleep(self.sleep_s)
+            # Fixed rate: a cycle's own duration comes out of the sleep, so the
+            # period is the cadence, not the cadence plus the fetch time.
+            elapsed = max(0.0, self._clock.monotonic() - started)
+            await self._clock.sleep(max(0.0, self.sleep_s - elapsed))
 
     async def _freshness_loop(self) -> None:
         while not self._stopping:
+            before = self._clock.monotonic()
             await self._clock.sleep(FRESHNESS_INTERVAL_S)
             if self._stopping:
                 return
+            # How late the tick woke: time the event loop spent on other work.
+            lag = self._clock.monotonic() - before - FRESHNESS_INTERVAL_S
+            self._loop_lag_max_s = max(self._loop_lag_max_s, lag)
             await self._freshness_tick()
 
     async def _health_loop(self) -> None:
@@ -440,6 +526,47 @@ class Collector:
             if self._stopping:
                 return
             self._health_tick()
+
+    async def _stop_request_loop(self) -> None:
+        """Check the stop-request file now and then once per interval."""
+        while not self._stopping:
+            if self._check_stop_request():
+                return
+            await self._clock.sleep(self._stop_poll_interval_s)
+
+    def _check_stop_request(self) -> bool:
+        """Start a clean stop for a fresh request. Delete a stale one."""
+        path = self._stop_file
+        if path is None:
+            return False
+        try:
+            mtime = path.stat().st_mtime
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            _log.warning("could not check stop request %s: %s", path, type(exc).__name__)
+            return False
+        if mtime < self._created_epoch - STOP_REQUEST_GRACE_S:
+            _log.warning("ignoring stale stop request %s from before this collector started", path)
+            self._emit(None, STOP_REQUEST_STALE, {"path": str(path)})
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                _log.warning("could not remove stale stop request: %s", type(exc).__name__)
+            return False
+        _log.info("stop requested through %s", path)
+        self._stop_file_seen = True
+        self._emit(None, STOP_REQUESTED, {"source": "stop_file"})
+        self._signal_stop()
+        return True
+
+    def _acknowledge_stop_request(self) -> None:
+        if not self._stop_file_seen or self._stop_file is None:
+            return
+        try:
+            self._stop_file.unlink(missing_ok=True)
+        except OSError as exc:
+            _log.warning("could not remove stop request after shutdown: %s", type(exc).__name__)
 
     async def _poll_once(self, *, once: bool = False) -> None:
         if self._stopping:
@@ -498,35 +625,32 @@ class Collector:
         for batch in batches:
             kalshi_ids = market_ids(batch, Venue.KALSHI)
             poly_ids = market_ids(batch, Venue.POLYMARKET_US)
+            budget_s = self.fetch_budget_s(batch)
+            # Both venues start together (low skew). Each accepts its own books
+            # when its fetch returns, and each is bounded by ``budget_s``.
             kalshi_result, poly_result = await asyncio.gather(
-                self._timed_fetch(self._kalshi, kalshi_ids),
-                self._timed_fetch(self._polyus, poly_ids),
+                self._timed_fetch(self._kalshi, kalshi_ids, budget_s),
+                self._timed_fetch(self._polyus, poly_ids, budget_s),
             )
-            kalshi_books, kalshi_duration = kalshi_result
-            poly_books, poly_duration = poly_result
-            self._timing(
-                "poll_fetch",
-                kalshi_duration,
-                venue=str(Venue.KALSHI),
-                requested=len(kalshi_ids),
-                returned=len(kalshi_books),
-            )
-            self._timing(
-                "poll_fetch",
-                poly_duration,
-                venue=str(Venue.POLYMARKET_US),
-                requested=len(poly_ids),
-                returned=len(poly_books),
-            )
-            accepted_mono = self._clock.monotonic()
-            accepted_wall = self._clock.wall()
-            for book in (*kalshi_books, *poly_books):
-                self._accept_book(book, accepted_mono, accepted_wall)
+            for venue, ids, (returned, duration) in (
+                (Venue.KALSHI, kalshi_ids, kalshi_result),
+                (Venue.POLYMARKET_US, poly_ids, poly_result),
+            ):
+                self._timing(
+                    "poll_fetch",
+                    duration,
+                    venue=str(venue),
+                    requested=len(ids),
+                    returned=returned,
+                    budget_s=budget_s,
+                )
+            checked_mono = self._clock.monotonic()
+            checked_wall = self._clock.wall()
             await self._sync_backpressure()
             if self._backpressure:
                 self.store.invalidate(None, RECORDING_BACKPRESSURE)
-            self._apply_book_freshness(accepted_mono, accepted_wall)
-            await self._sync_maintenance(accepted_wall)
+            self._apply_book_freshness(checked_mono, checked_wall)
+            await self._sync_maintenance(checked_wall)
             batch_touched = self._groups_for_ids(
                 ((Venue.KALSHI, kalshi_ids), (Venue.POLYMARKET_US, poly_ids))
             )
@@ -573,6 +697,7 @@ class Collector:
         self._check_disk()
         alarm = "disk_low" if self._disk_low else None
         self._emit(None, HEALTH, self._health_detail(alarm=alarm))
+        self._loop_lag_max_s = 0.0
 
     def _accept_book(self, book: Book, now_mono: float, now_wall: datetime) -> None:
         self._enqueue_raw(_envelope(book, now_mono, now_wall))
@@ -594,44 +719,166 @@ class Collector:
                 self.store.generation(book.venue),
             )
 
-    async def _fetch(self, adapter: VenueAdapter, ids: Sequence[str]) -> list[Book]:
+    def fetch_budget_s(self, batch: Sequence[ScheduledGroup]) -> float:
+        """Time one venue's fetch of ``batch`` may take, retries included.
+
+        The batch's own cadence is ``max(min cadence, n_poly / polyus rps)``,
+        which also covers the books bucket's pacing of its Polymarket US calls.
+        The budget is ``poll_fetch_budget_fraction`` of that cadence's freshness
+        window, capped at ``poll_fetch_budget_max_s``.
+        """
+        settings = self._settings
+        n_poly = len(market_ids(batch, Venue.POLYMARKET_US))
+        cadence = max(settings.min_poll_cadence_s, n_poly / settings.polyus_books_rps)
+        window = max_age_for(
+            "poll",
+            cadence,
+            stream_max_age_s=settings.stream_max_age_s,
+            poll_multiple=settings.poll_max_age_cadence_multiple,
+        )
+        return min(settings.poll_fetch_budget_fraction * window, settings.poll_fetch_budget_max_s)
+
+    async def _fetch(
+        self, adapter: VenueAdapter, ids: Sequence[str], budget_s: float
+    ) -> list[Book]:
         if not ids:
             return []
+        started = self._clock.monotonic()
+        deadline = Deadline(started + budget_s, self._clock.monotonic)
         try:
-            books = await adapter.get_books(list(ids))
+            # The task copies this context, so every request it makes sees the deadline.
+            with request_deadline(deadline, budget_s=budget_s):
+                task = asyncio.ensure_future(adapter.get_books(list(ids)))
+            books = await self._within(task, budget_s, adapter.venue, len(ids))
         except asyncio.CancelledError:
             raise
+        except PartialBooksError as exc:
+            self._record_adapter_error(adapter.venue, exc, ids, started, budget_s)
+            books = exc.books
         except Exception as exc:  # noqa: BLE001 - any adapter failure invalidates that venue
-            self._record_adapter_error(adapter.venue, exc)
+            self._record_adapter_error(adapter.venue, exc, ids, started, budget_s)
             return []
-        if not isinstance(books, list):
-            self._record_adapter_error(adapter.venue, TypeError("get_books must return a list"))
-            return []
+        else:
+            if not isinstance(books, list):
+                self._record_adapter_error(
+                    adapter.venue, TypeError("get_books must return a list"), ids, started, budget_s
+                )
+                return []
+            self._record_success(adapter.venue)
         return books
 
-    async def _timed_fetch(
-        self, adapter: VenueAdapter, ids: Sequence[str]
-    ) -> tuple[list[Book], float]:
-        started = self._clock.monotonic()
-        books = await self._fetch(adapter, ids)
-        return books, max(0.0, self._clock.monotonic() - started)
+    async def _within(
+        self, task: asyncio.Future[list[Book]], budget_s: float, venue: Venue, requested: int
+    ) -> list[Book]:
+        """Await ``task``; cancel it if it outlives the budget (on the collector clock)."""
+        timer = asyncio.ensure_future(self._clock.sleep(budget_s + FETCH_BACKSTOP_GRACE_S))
+        try:
+            await asyncio.wait({task, timer}, return_when=asyncio.FIRST_COMPLETED)
+        except asyncio.CancelledError:
+            task.cancel()
+            timer.cancel()
+            await asyncio.gather(task, timer, return_exceptions=True)
+            raise
+        if task.done():
+            timer.cancel()
+            await asyncio.gather(timer, return_exceptions=True)
+            return task.result()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        raise FetchBudgetExceededError(venue, budget_s, requested)
 
-    def _record_adapter_error(self, venue: Venue, exc: Exception) -> None:
+    async def _timed_fetch(
+        self, adapter: VenueAdapter, ids: Sequence[str], budget_s: float
+    ) -> tuple[int, float]:
+        """Fetch, then accept the books at once, stamped when this venue's fetch returned."""
+        started = self._clock.monotonic()
+        books = await self._fetch(adapter, ids, budget_s)
+        accepted_mono = self._clock.monotonic()
+        accepted_wall = self._clock.wall()
+        for book in books:
+            self._accept_book(book, accepted_mono, accepted_wall)
+        return len(books), max(0.0, accepted_mono - started)
+
+    def _record_adapter_error(
+        self,
+        venue: Venue,
+        exc: Exception,
+        requested: Sequence[str] = (),
+        started_mono: float | None = None,
+        budget_s: float | None = None,
+    ) -> None:
+        """Count, invalidate, log, and record one failed venue fetch.
+
+        Only the markets that failed are invalidated: books that did arrive (a
+        partial result) and other batches' books stay as they are.
+        """
         self.error_count += 1
-        status = getattr(exc, "status_code", None)
-        if status == 429 or "HTTP 429" in str(exc):
+        if isinstance(exc, PartialBooksError):
+            errors: list[BaseException] = exc.errors or [exc]
+            failed_ids = list(exc.failures)
+        else:
+            errors = [exc]
+            failed_ids = list(requested)
+        primary = errors[0]
+        causes: dict[str, int] = {}
+        for err in errors:
+            cause = failure_cause(err)
+            causes[cause] = causes.get(cause, 0) + 1
+        totals = self.poll_failures.setdefault(str(venue), {})
+        for cause, count in causes.items():
+            totals[cause] = totals.get(cause, 0) + count
+        if "http_429" in causes or any("HTTP 429" in str(err) for err in errors):
             self.http_429_count += 1
-        self.store.invalidate_venue(venue, ADAPTER_ERROR)
-        _log.warning("book poll failed for %s: %s", venue, type(exc).__name__)
-        self._emit(
-            str(venue),
-            ADAPTER_ERROR,
+        if failed_ids:
+            for market_id in failed_ids:
+                self.store.invalidate(market_key(venue, market_id), ADAPTER_ERROR)
+        else:
+            self.store.invalidate_venue(venue, ADAPTER_ERROR)
+
+        elapsed = None if started_mono is None else self._clock.monotonic() - started_mono
+        detail = failure_detail(primary)
+        detail.update(
             {
-                "error_type": type(exc).__name__,
-                "error": str(exc)[:500],
-                "status_code": status if isinstance(status, int) else None,
-            },
+                "causes": causes,
+                "requested": len(requested),
+                "failed": len(failed_ids),
+                "fetch_elapsed_s": None if elapsed is None else round(elapsed, 4),
+                "fetch_budget_s": budget_s,
+            }
         )
+        if isinstance(exc, PartialBooksError):
+            detail["partial"] = True
+            detail["summary"] = str(exc)[:500]
+        key = str(venue)
+        streak = self._failure_streak.get(key, 0) + 1
+        self._failure_streak[key] = streak
+        label = ",".join(sorted(causes))
+        changed = self._streak_cause.get(key) != label
+        self._streak_cause[key] = label
+        detail["streak"] = streak
+        loud = streak == 1 or changed or streak % ERROR_LOG_REPEAT_EVERY == 0
+        _log.log(
+            logging.WARNING if loud else logging.DEBUG,
+            "book poll failed for %s [cause=%s failed=%d/%d streak=%d elapsed=%s budget=%s]: %s: %s",
+            venue,
+            label,
+            len(failed_ids),
+            len(requested),
+            streak,
+            "?" if elapsed is None else f"{elapsed:.2f}s",
+            "?" if budget_s is None else f"{budget_s:.2f}s",
+            type(primary).__name__,
+            primary,
+        )
+        self._emit(key, ADAPTER_ERROR, detail)
+
+    def _record_success(self, venue: Venue) -> None:
+        key = str(venue)
+        streak = self._failure_streak.pop(key, 0)
+        last = self._streak_cause.pop(key, None)
+        if streak:
+            _log.info("book poll recovered for %s after %d failed polls (%s)", venue, streak, last)
+            self._emit(key, ADAPTER_RECOVERED, {"failed_polls": streak, "last_causes": last})
 
     def _apply_book_freshness(self, now_mono: float, now_wall: datetime) -> set[str]:
         changed: set[str] = set()
@@ -743,12 +990,33 @@ class Collector:
             "last_book_age_s": self._last_book_age(self._clock.wall()),
             "error_count": self.error_count,
             "http_429_count": self.http_429_count,
+            "poll_failures_by_cause": {
+                venue: dict(causes) for venue, causes in sorted(self.poll_failures.items())
+            },
+            "poll_failure_streak": dict(self._failure_streak),
+            "http": self._http_metrics(),
+            "loop_lag_max_s": round(self._loop_lag_max_s, 4),
             "disk_free_bytes": self._disk_free_bytes,
             "raw_logging": self._raw_logging,
             "backpressure": self._backpressure,
             "cadence_s": self.cadence_s,
             "alarm": alarm,
         }
+
+    def _http_metrics(self) -> dict[str, Any]:
+        """Per-bucket request counters from the adapters' HTTP clients, if they expose them."""
+        out: dict[str, Any] = {}
+        seen: set[int] = set()
+        for adapter in (self._kalshi, self._polyus):
+            http = getattr(adapter, "http", None)
+            metrics = getattr(http, "metrics", None)
+            if http is None or id(http) in seen or not callable(metrics):
+                continue
+            seen.add(id(http))
+            snapshot = metrics()
+            if isinstance(snapshot, dict):
+                out.update(snapshot)
+        return out
 
     def _last_book_age(self, now_wall: datetime) -> dict[str, float | None]:
         newest: dict[str, datetime] = {}
@@ -859,6 +1127,7 @@ class Collector:
                 self._fresh_task,
                 self._health_task,
                 self._discovery_task,
+                self._stop_file_task,
             )
             if task is not None
         ]
@@ -888,6 +1157,9 @@ class Collector:
         if not self._install_signals_flag:
             return
         loop = asyncio.get_running_loop()
+        if is_windows():
+            self._install_win32_signals(loop)
+            return
         for sig in _SIGNALS:
             try:
                 loop.add_signal_handler(sig, self._signal_stop)
@@ -895,8 +1167,46 @@ class Collector:
                 return
             self._signals.append(sig)
 
+    def _install_win32_signals(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Install ``signal.signal`` handlers that hand the stop to ``loop``.
+
+        Python runs signal handlers in the main thread between bytecodes, so
+        the handler only schedules :meth:`_signal_stop` with
+        ``call_soon_threadsafe``, which also wakes a loop that is blocked in
+        ``select``. The handlers this replaces are restored on exit.
+        """
+        if threading.current_thread() is not threading.main_thread():
+            return  # signal.signal only works in the main thread
+
+        def handler(signum: int, frame: FrameType | None) -> None:
+            del frame
+            try:
+                loop.call_soon_threadsafe(self._signal_stop)
+            except RuntimeError:  # the loop already closed
+                return
+
+        for name in _WIN32_SIGNAL_NAMES:
+            sig = getattr(signal, name, None)
+            if sig is None:
+                continue
+            try:
+                previous = signal.signal(sig, handler)
+            except (OSError, RuntimeError, ValueError):
+                continue
+            self._previous_handlers[int(sig)] = previous
+            self._signals.append(sig)
+
     def _remove_signals(self) -> None:
         if not self._signals:
+            return
+        if self._previous_handlers:
+            for sig in self._signals:
+                previous = self._previous_handlers.pop(int(sig), None)
+                try:
+                    signal.signal(sig, previous if previous is not None else signal.SIG_DFL)
+                except (OSError, RuntimeError, ValueError):
+                    _log.warning("could not restore the handler for signal %s", int(sig))
+            self._signals.clear()
             return
         loop = asyncio.get_running_loop()
         for sig in self._signals:
