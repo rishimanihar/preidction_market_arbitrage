@@ -1103,7 +1103,9 @@ class DbWriterTask:
         )
         self._thread.start()
         try:
-            await asyncio.to_thread(self._opened.wait)
+            opened = await asyncio.to_thread(self._opened.wait, 30.0)
+            if not opened:
+                raise TimeoutError("database writer did not open within 30s")
             if self._open_error is not None:
                 raise self._open_error
             self.ready.set()
@@ -1122,8 +1124,14 @@ class DbWriterTask:
                 _log.exception("db writer shutdown failed")
             raise
 
-    async def drain(self) -> None:
-        """Force pending writes through commit and wait for earlier queue entries."""
+    async def drain(self, timeout_s: float = 30.0) -> None:
+        """Force pending writes through commit and wait for earlier queue entries.
+
+        ``timeout_s`` bounds the wait. A queue that never finishes raises
+        ``TimeoutError`` instead of blocking shutdown.
+        """
+        if timeout_s <= 0:
+            raise ValueError("drain timeout must be > 0")
         runner = self._runner
         if runner is None:
             await asyncio.sleep(0)
@@ -1134,8 +1142,12 @@ class DbWriterTask:
         joined = asyncio.create_task(self.queue.join())
         try:
             done, _pending = await asyncio.wait(
-                {joined, runner}, return_when=asyncio.FIRST_COMPLETED
+                {joined, runner},
+                timeout=timeout_s,
+                return_when=asyncio.FIRST_COMPLETED,
             )
+            if not done:
+                raise TimeoutError(f"database drain exceeded {timeout_s:.1f}s")
             if joined in done:
                 await joined
                 return

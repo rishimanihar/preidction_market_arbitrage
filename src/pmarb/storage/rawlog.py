@@ -408,8 +408,14 @@ class RawLogTask:
         for _ in range(count):
             self.queue.task_done()
 
-    async def drain(self) -> None:
-        """Force queued envelopes through gzip write and fsync, then return."""
+    async def drain(self, timeout_s: float = 30.0) -> None:
+        """Force queued envelopes through gzip write and fsync, then return.
+
+        ``timeout_s`` bounds the wait. A queue that never finishes raises
+        ``TimeoutError`` instead of blocking shutdown.
+        """
+        if timeout_s <= 0:
+            raise ValueError("drain timeout must be > 0")
         runner = self._runner
         if runner is None:
             await asyncio.sleep(0)
@@ -420,8 +426,12 @@ class RawLogTask:
         joined = asyncio.create_task(self.queue.join())
         try:
             done, _pending = await asyncio.wait(
-                {joined, runner}, return_when=asyncio.FIRST_COMPLETED
+                {joined, runner},
+                timeout=timeout_s,
+                return_when=asyncio.FIRST_COMPLETED,
             )
+            if not done:
+                raise TimeoutError(f"raw log drain exceeded {timeout_s:.1f}s")
             if joined in done:
                 await joined
                 return

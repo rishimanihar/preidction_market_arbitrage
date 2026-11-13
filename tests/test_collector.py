@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
+import time
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
 
@@ -1106,6 +1108,97 @@ async def test_cancel_during_fetch_is_not_an_adapter_error() -> None:
             await task
         assert collector.error_count == 0
         assert "collector_shutdown" in gaps
+
+
+async def test_raw_drain_times_out_when_the_queue_is_never_finished(tmp_path) -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+    queue: asyncio.Queue[Envelope] = asyncio.Queue()
+
+    class Stuck(RawLogTask):
+        async def run(self) -> None:
+            self._runner = asyncio.current_task()
+            started.set()
+            await release.wait()
+
+    writer = RawLogWriter(tmp_path / "raw", clock=lambda: T0)
+    task_obj = Stuck(writer, queue, flush_interval=3600)
+    handle = asyncio.create_task(task_obj.run())
+    await asyncio.wait_for(started.wait(), 1)
+    queue.put_nowait(dummy_env(0))
+    try:
+        with pytest.raises(TimeoutError, match="raw log drain exceeded"):
+            await asyncio.wait_for(task_obj.drain(timeout_s=0.05), timeout=1)
+    finally:
+        release.set()
+        handle.cancel()
+        await asyncio.gather(handle, return_exceptions=True)
+
+
+async def test_database_drain_times_out_when_the_queue_is_never_finished(tmp_path) -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+    queue: asyncio.Queue[object] = asyncio.Queue()
+
+    class Stuck(DbWriterTask):
+        async def run(self) -> None:
+            self._runner = asyncio.current_task()
+            started.set()
+            await release.wait()
+
+    task_obj = Stuck(tmp_path / "pmarb.sqlite", queue, commit_interval_s=3600)
+    handle = asyncio.create_task(task_obj.run())
+    await asyncio.wait_for(started.wait(), 1)
+    queue.put_nowait(object())
+    try:
+        with pytest.raises(TimeoutError, match="database drain exceeded"):
+            await asyncio.wait_for(task_obj.drain(timeout_s=0.05), timeout=1)
+    finally:
+        release.set()
+        handle.cancel()
+        await asyncio.gather(handle, return_exceptions=True)
+
+
+async def test_stop_returns_when_a_writer_ignores_cancellation(tmp_path) -> None:
+    started = threading.Event()
+    release = threading.Event()
+
+    def block() -> None:
+        started.set()
+        release.wait()
+
+    class Stuck(RawLogTask):
+        async def run(self) -> None:
+            self._runner = asyncio.current_task()
+            await asyncio.to_thread(block)
+
+    clock = FakeClock(wall=T0)
+    log: list[tuple[str, str]] = []
+    raw_q: asyncio.Queue[Envelope] = asyncio.Queue()
+    writer = RawLogWriter(tmp_path / "raw", clock=lambda: T0)
+    raw_task = Stuck(writer, raw_q, flush_interval=3600)
+    collector, _gaps, _updates = build(
+        clock,
+        FakeVenue(Venue.KALSHI, log),
+        FakeVenue(Venue.POLYMARKET_US, log),
+        raw_task=raw_task,
+        drain_timeout_s=0.2,
+        settings=Settings(_env_file=None, data_dir=tmp_path),
+    )
+    collector._bind()
+    collector._start_writers()
+    try:
+        assert await asyncio.to_thread(started.wait, 2)
+        began = time.monotonic()
+        await asyncio.wait_for(collector.stop(), timeout=2)
+        assert time.monotonic() - began < 1.0
+    finally:
+        release.set()
+        handle = collector._raw_handle
+        if handle is not None and not handle.done():
+            handle.cancel()
+        if handle is not None:
+            await asyncio.wait_for(asyncio.gather(handle, return_exceptions=True), timeout=2)
 
 
 async def test_empty_universe_does_not_fetch() -> None:
