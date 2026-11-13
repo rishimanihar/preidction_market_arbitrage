@@ -1,0 +1,33 @@
+canonical_id,league,display_name,city_or_school,nickname,kalshi_code,polymarket_code,aliases,source
+nfl:ARI,nfl,Arizona Cardinals,Arizona,Cardinals,ARI,ari,ARI Cardinals|ARI,observed
+nfl:ATL,nfl,Atlanta Falcons,Atlanta,Falcons,ATL,atl,ATL Falcons|ATL,observed
+nfl:BAL,nfl,Baltimore Ravens,Baltimore,Ravens,BAL,bal,BAL Ravens|BAL,observed
+nfl:BUF,nfl,Buffalo Bills,Buffalo,Bills,BUF,buf,BUF Bills|BUF,observed
+nfl:CAR,nfl,Carolina Panthers,Carolina,Panthers,CAR,car,CAR Panthers|CAR,observed
+nfl:CHI,nfl,Chicago Bears,Chicago,Bears,CHI,chi,,inferred
+nfl:CIN,nfl,Cincinnati Bengals,Cincinnati,Bengals,CIN,cin,CIN Bengals|CIN,observed
+nfl:CLE,nfl,Cleveland Browns,Cleveland,Browns,CLE,cle,CLE Browns|CLE,observed
+nfl:DAL,nfl,Dallas Cowboys,Dallas,Cowboys,DAL,dal,DAL Cowboys|DAL,observed
+nfl:DEN,nfl,Denver Broncos,Denver,Broncos,DEN,den,,inferred
+nfl:DET,nfl,Detroit Lions,Detroit,Lions,DET,det,DET Lions|DET,observed
+nfl:GB,nfl,Green Bay Packers,Green Bay,Packers,GB,gb,GB Packers|GB,observed
+nfl:HOU,nfl,Houston Texans,Houston,Texans,HOU,hou,HOU Texans|HOU,observed
+nfl:IND,nfl,Indianapolis Colts,Indianapolis,Colts,IND,ind,IND Colts|IND,observed
+nfl:JAX,nfl,Jacksonville Jaguars,Jacksonville,Jaguars,JAC,jax,JAC Jaguars|JAX,observed
+nfl:KC,nfl,Kansas City Chiefs,Kansas City,Chiefs,KC,kc,KC Chiefs|KC,observed
+nfl:LAC,nfl,Los Angeles Chargers,Los Angeles,Chargers,LAC,lac,LA Chargers|Los Angeles C|LAC,observed
+nfl:LAR,nfl,Los Angeles Rams,Los Angeles,Rams,LAR,lar,LA Rams|Los Angeles R|LAR,observed
+nfl:LV,nfl,Las Vegas Raiders,Las Vegas,Raiders,LV,lv,Oakland Raiders|LV Raiders|LV,observed
+nfl:MIA,nfl,Miami Dolphins,Miami,Dolphins,MIA,mia,MIA Dolphins|MIA,observed
+nfl:MIN,nfl,Minnesota Vikings,Minnesota,Vikings,MIN,min,MIN Vikings|MIN,observed
+nfl:NE,nfl,New England Patriots,New England,Patriots,NE,ne,NE Patriots|NE,observed
+nfl:NO,nfl,New Orleans Saints,New Orleans,Saints,NO,no,NO Saints|NO,observed
+nfl:NYG,nfl,New York Giants,New York,Giants,NYG,nyg,NY Giants|New York G|NYG,observed
+nfl:NYJ,nfl,New York Jets,New York,Jets,NYJ,nyj,NY Jets|New York J|NYJ,observed
+nfl:PHI,nfl,Philadelphia Eagles,Philadelphia,Eagles,PHI,phi,,inferred
+nfl:PIT,nfl,Pittsburgh Steelers,Pittsburgh,Steelers,PIT,pit,PIT Steelers|PIT,observed
+nfl:SEA,nfl,Seattle Seahawks,Seattle,Seahawks,SEA,sea,SEA Seahawks|SEA,observed
+nfl:SF,nfl,San Francisco 49ers,San Francisco,49ers,SF,sf,SF 49ers|SF,observed
+nfl:TB,nfl,Tampa Bay Buccaneers,Tampa Bay,Buccaneers,TB,tb,,inferred
+nfl:TEN,nfl,Tennessee Titans,Tennessee,Titans,TEN,ten,TEN Titans|TEN,observed
+nfl:WAS,nfl,Washington Commanders,Washington,Commanders,WAS,was,Washington Football Team|WAS Commanders|WAS,observed
