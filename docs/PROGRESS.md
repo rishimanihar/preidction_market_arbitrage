@@ -4,9 +4,22 @@ This is the build's living status: what's done, what we've learned that isn't in
 
 _Last updated: 2026-11-12 14:45 CST_
 
-## Status (2026-11-12 13:30 CST)
+## Status (2026-11-12 20:15 CST)
 
-**All of M1 is built and integrated** on `m1/integration` (548 tests). The first live end-to-end run has happened. Fixes it surfaced are in progress on `m1/livefix`.
+**On `m1/integration` (725 tests):** M1, plus #19 (Windows), #20 (retry fix) and #21 (security hardening). The Grok orchestrator merged #19–#21 after a fresh-worktree review. **#22 (M3 replay)** is open; it is stacked on `m1/integration` and passes 739 tests.
+
+**CI:**
+- **Linux** passes on #22.
+- **Windows** fails 6 tests on #22. One is a real bug: `secrets.py` uses `os.O_NOFOLLOW` unconditionally, so loading a key on Windows would crash.
+- **Fix:** a Grok worker is on branch `m1/windows-ci-fix`.
+
+**Evening soak (`data/soak-2026-11-12-evening`, private):**
+- **First start (17:30):** died at 17:32. It was a child of the hand-off orchestrator's shell and was killed when that shell exited. `nohup` does not protect against this.
+- **Restart (20:04):** the collector now runs in its own session (`start_new_session`), under `caffeinate -is`, with 8 groups.
+- **Health:** most evaluations are rejected as `books_not_fresh`. Kalshi polls take about 3.4 s against a 4 s age limit and a 3 s budget, and there are ReadTimeout bursts while the network is flaky. `pmarb report` will show how much valid coverage this run produced.
+- **Power:** the laptop is on battery, and `-s` holds only on AC power.
+
+**Earlier (13:30):**
 
 | PR | Item | State |
 |---|---|---|
@@ -17,6 +30,10 @@ _Last updated: 2026-11-12 14:45 CST_
 | #14 / #15 | M2: Polymarket US / Kalshi WebSocket streams | open |
 | #11 | M2: request signing | open |
 | #16 | `pmarb report` (M1 analysis) | open |
+| #17 / #18 | Deploy templates / M2-D stream integration | open |
+| #19 / #20 / #21 | Windows / retry fix / security hardening | open; merged into `m1/integration` |
+| #22 | M3 replay (`pmarb replay run/verify`) | open; stacked on `m1/integration` |
+| `m1/windows-ci-fix` | Windows-safe key loading + Windows-aware tests (Grok) | in progress |
 | `m1/pr6b-evaluator` | PR-6b: evaluator, episodes, discovery, auto-review, scenario fees | pushed |
 | `m1/integration` | Everything merged and reconciled (report ported to the PR-1 fee models) | pushed |
 | `m1/livefix` | Profile and fix discovery slowness and backpressure (Codex) | in progress |
@@ -85,7 +102,7 @@ _Last updated: 2026-11-12 14:45 CST_
 
    Follow-ups: decide on the Polymarket US CDN cache (item 11) and take evaluation off the event loop (item 12).
 2. **Windows support is on `m1/integration`.** It adds `tzdata`, Windows signal handling and `pmarb stop`, `icacls` checks, a skip of directory fsync on Windows, a `w32tm` clock check, `deploy/windows/` (Task Scheduler), `docs/RUN_ON_WINDOWS.md`, and a `windows-latest` CI job. Next: confirm that CI job is green, then do a first real-PC run by following the runbook.
-3. **Start the real soak.** Run `pmarb scan` across an evening slate. Short term: this Mac with `caffeinate -is`. Long term: Rishi's Windows desktop, via `docs/RUN_ON_WINDOWS.md` once it lands. Then run `pmarb report`.
+3. **The evening soak is running** (restarted 20:04). Next: stop it with `pmarb stop` and run `pmarb report` on it, with the output under `data/reports/`. Then try `pmarb replay verify` on the same raw log and database (#22). Long term, it runs on Rishi's Windows desktop via `docs/RUN_ON_WINDOWS.md` once Windows CI is green. Start long runs in their own session (`start_new_session` or `deploy/` templates), never as a child of an agent's shell.
 4. **Open the integration PR** (`m1/integration` → `main`) once Rishi has reviewed the stacked PRs, or let him merge the stack in order.
 5. **M2:** wire the streams into the collector. Change `depth_unconfirmed` to valid + non-atomic. This needs API keys.
 6. **Users:** create venue accounts and read keys. Rishi turns on secret scanning and protects `main`.
