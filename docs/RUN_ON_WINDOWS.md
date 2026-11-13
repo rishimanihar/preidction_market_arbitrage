@@ -211,7 +211,7 @@ Any `FAIL` line makes the exit code `1`.
 | `WARN env file ACL NOT verified: icacls was not found` | Check with `Get-Command icacls`; it should be `C:\Windows\System32\icacls.exe`. Ask the human. |
 | `Kalshi key file check failed` or `Polymarket US key file check failed` | M1 needs no keys. Ask the human to empty that line in `.env`, for example `KALSHI_PRIVATE_KEY_PATH=`. |
 | `FAIL database not found` or `database schema ...` | Run `.\deploy\windows\install.ps1` again; it initializes the database. |
-| `FAIL logs directory not found` | Run `.\deploy\windows\install.ps1` again. |
+| `WARN logs directory not found` | Expected before the first collector run; it creates the directory. A logs directory that is not writable is still a `FAIL`. |
 | `FAIL data dir is not gitignored` or `data dir inside repository must be under ...` | Use the default data folder (`$repo\data`) or a folder outside the checkout. |
 | `FAIL disk headroom below 2 GiB` | Ask the human to free disk space. A soak writes several GB per day. |
 | `WARN system clock is not synchronized` | Ask the human to open Settings > Time & language > Date & time, turn on "Set time automatically", and click "Sync now". |

@@ -90,6 +90,19 @@ def _doctor_offline(settings: Settings, repo_root: Path | None) -> list[str]:
     return cli._doctor(settings, repo_root, run, env_file=Path("/nonexistent/pmarb.env"))
 
 
+def test_doctor_missing_logs_directory_does_not_fail(tmp_path: Path) -> None:
+    data_dir = tmp_path / "outside" / "data"
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    data_dir.mkdir(parents=True)
+    with closing(open_writer(data_dir / "pmarb.sqlite")):
+        pass
+    errors = _doctor_offline(Settings(data_dir=data_dir), repo_root)
+    assert any(item.startswith("WARN logs directory not found") for item in errors)
+    assert not any(item.startswith("FAIL") for item in errors)
+    assert not errors
+
+
 def test_doctor_happy_path(tmp_path: Path) -> None:
     data_dir = tmp_path / "outside" / "data"
     repo_root = tmp_path / "repo"

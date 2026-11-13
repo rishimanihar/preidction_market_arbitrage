@@ -75,7 +75,7 @@ def test_missing_or_timed_out_clock_command_is_unknown() -> None:
     ]
 
 
-def test_deployment_checks_require_logs_and_exact_env_mode(tmp_path: Path) -> None:
+def test_deployment_checks_warn_on_missing_logs_and_require_env_mode(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     env_file = tmp_path / ".env"
@@ -88,7 +88,8 @@ def test_deployment_checks_require_logs_and_exact_env_mode(tmp_path: Path) -> No
         lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout=""),
         system="Unknown",
     )
-    assert any(item.startswith("FAIL logs directory not found") for item in findings)
+    assert any(item.startswith("WARN logs directory not found") for item in findings)
+    assert not any(item.startswith("FAIL logs") for item in findings)
     assert any(item.startswith("FAIL env file must have exact mode 600") for item in findings)
     assert any(item.startswith("WARN clock") for item in findings)
 
@@ -130,3 +131,20 @@ def test_low_disk_headroom_fails_using_logs_directory(tmp_path: Path, monkeypatc
     )
     assert seen == [logs]
     assert any(item.startswith("FAIL disk headroom below 2 GiB") for item in findings)
+
+
+@posix_only
+@pytest.mark.parametrize("mode", [0o500, 0o775])
+def test_existing_logs_directory_with_bad_permissions_fails(tmp_path: Path, mode: int) -> None:
+    data_dir = tmp_path / "data"
+    logs = data_dir / "logs"
+    logs.mkdir(parents=True)
+    logs.chmod(mode)
+    findings = diagnostics.deployment_checks(
+        data_dir,
+        tmp_path / "absent.env",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="yes"),
+        system="Linux",
+    )
+    assert any(item.startswith("FAIL logs directory") for item in findings)
+    assert not any(item.startswith("WARN logs directory") for item in findings)

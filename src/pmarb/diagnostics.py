@@ -1,5 +1,6 @@
 """Portable host checks used by ``pmarb doctor``."""
 
+import os
 import platform
 import re
 import shutil
@@ -154,6 +155,33 @@ def _windows_env_file_findings(
     return [f"WARN {warning}" for warning in warnings]
 
 
+def _logs_directory_findings(log_dir: Path) -> list[str]:
+    """The collector creates ``data/logs`` on first run, mode 0o700.
+
+    A missing directory is a warning. A directory the collector cannot write,
+    or one group/other can write, is a failure.
+    """
+    if not log_dir.is_dir():
+        return [f"WARN logs directory not found: {log_dir}"]
+    if is_windows():
+        try:
+            writable = os.access(log_dir, os.W_OK)
+        except OSError as exc:
+            return [f"FAIL logs directory permission check failed: {exc}"]
+        if not writable:
+            return [f"FAIL logs directory is not writable: {log_dir}"]
+        return []
+    try:
+        mode = stat.S_IMODE(log_dir.stat().st_mode)
+    except OSError as exc:
+        return [f"FAIL logs directory permission check failed: {exc}"]
+    if mode & 0o700 != 0o700:
+        return [f"FAIL logs directory is not writable: {log_dir}"]
+    if mode & 0o022:
+        return [f"FAIL logs directory is writable by group or other: {log_dir}"]
+    return []
+
+
 def deployment_checks(
     data_dir: Path,
     env_file: Path,
@@ -168,8 +196,7 @@ def deployment_checks(
     findings.extend(timezone_findings())
     log_dir = data_dir / "logs"
     logs_present = log_dir.is_dir()
-    if not logs_present:
-        findings.append(f"FAIL logs directory not found: {log_dir}")
+    findings.extend(_logs_directory_findings(log_dir))
 
     try:
         free = shutil.disk_usage(log_dir if logs_present else data_dir).free

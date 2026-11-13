@@ -195,6 +195,17 @@ def _check_data_dir(data_dir: Path, repo_root: Path | None) -> list[str]:
     return errors
 
 
+class _DoctorFindings(list[str]):
+    """Doctor findings. INFO and WARN stay printable and do not fail the command.
+
+    Truthiness matches the exit code: a fresh data directory, whose logs
+    directory does not exist yet, is not a failure.
+    """
+
+    def __bool__(self) -> bool:
+        return any(not item.startswith(("INFO ", "WARN ")) for item in self)
+
+
 def _doctor(
     settings: Settings,
     repo_root: Path | None,
@@ -245,7 +256,7 @@ def _doctor(
             repo_root=repo_root,
         )
     )
-    return errors
+    return _DoctorFindings(errors)
 
 
 def _load_review_app() -> Path:
