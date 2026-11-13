@@ -1003,6 +1003,10 @@ def _parse_poly(env: Envelope, wall: datetime, mono: float) -> Book:
         received_monotonic=mono,
         connection_generation=env.conn_gen,
     )
+    if env.cache_headers:
+        book = book.model_copy(
+            update={"raw_native": {**book.raw_native, "cache_headers": dict(env.cache_headers)}}
+        )
     if book.market_id:
         return book
     slug = _slug_from_endpoint(env.endpoint)

@@ -7,10 +7,12 @@ import sqlite3
 import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+from pmarb.collector.books import BookMeta, BookState
+from pmarb.collector.freshness import book_is_cached, is_fresh
 from pmarb.config import Settings
 from pmarb.ladder import InsufficientDepth, walk
 from pmarb.models import Book, Leg, Level, OpportunityAssessment, Side
@@ -36,6 +38,7 @@ class BookEvent:
     mono_ns: int
     serial: int
     book: Book
+    wall: datetime
 
 
 @dataclass(slots=True)
@@ -78,24 +81,23 @@ def run_simulation(
     replay_settings = settings or Settings(_env_file=None)
     decisions: list[Decision] = []
     with tempfile.TemporaryDirectory(prefix="pmarb-sim-replay-") as tmp:
+        replay_db = Path(tmp) / "replay.sqlite"
         ReplayEngine(
             raw_root,
             source_db,
-            Path(tmp) / "replay.sqlite",
+            replay_db,
             since=since,
             until=until,
             settings=replay_settings,
             on_assessment=lambda mono, assessment: decisions.append(Decision(mono, assessment)),
         ).run()
-    decisions = [
-        item
-        for item in decisions
-        if item.assessment.net_profit is not None
-        and item.assessment.net_profit > ZERO
-        and item.assessment.yes_result is not None
-        and item.assessment.no_result is not None
-    ]
-    recorded, _gaps = load_recording(raw_root, since=since, until=until)
+        episode_rows = _read_episodes(replay_db)
+    decisions = _episode_decisions(
+        decisions,
+        episode_rows,
+        max_gap_s=2 * replay_settings.min_poll_cadence_s,
+    )
+    recorded, gaps = load_recording(raw_root, since=since, until=until)
     book_events: list[BookEvent] = []
     serial = 0
     for record in recorded:
@@ -103,7 +105,17 @@ def run_simulation(
             continue
         for book in parse_rest_books(record.envelope):
             serial += 1
-            book_events.append(BookEvent(record.mono_ns, serial, book))
+            book_events.append(BookEvent(record.mono_ns, serial, book, record.wall))
+
+    gap_events: list[tuple[int, str]] = []
+    by_path: dict[str, int] = {}
+    for record in recorded:
+        by_path[record.path] = max(record.mono_ns, by_path.get(record.path, record.mono_ns))
+    for gap in gaps:
+        mono_ns = by_path.get(gap.path)
+        if mono_ns is not None:
+            gap_events.append((mono_ns + 1, Path(gap.path).parent.parent.name))
+    gap_events.sort()
 
     histories, markets, _seen = _load_source(source_db)
     del histories
@@ -124,8 +136,8 @@ def run_simulation(
     haircuts = tuple(dict.fromkeys(haircuts))
     if not delay_scenarios or not haircuts:
         raise ValueError("at least one delay scenario and one haircut are required")
-    rng = random.Random(seed)
     scenarios = [(delay_pair, haircut) for delay_pair in delay_scenarios for haircut in haircuts]
+    jitter = _paired_jitter(decisions, delay_scenarios, jitter_ms, seed)
     out_db.parent.mkdir(parents=True, exist_ok=True)
     if out_db.exists():
         out_db.unlink()
@@ -135,9 +147,8 @@ def run_simulation(
         count = 0
         for delay_pair, haircut in scenarios:
             scenario_decisions = []
-            for decision in decisions:
-                j0 = rng.randint(0, jitter_ms) if jitter_ms else 0
-                j1 = rng.randint(0, jitter_ms) if jitter_ms else 0
+            for decision_index, decision in enumerate(decisions):
+                j0, j1 = jitter[(decision_index, delay_pair)]
                 arrival0 = decision.mono_ns + (delay_pair[0] + j0) * 1_000_000
                 arrival1 = decision.mono_ns + (delay_pair[1] + j1) * 1_000_000
                 assessment = decision.assessment
@@ -145,28 +156,46 @@ def run_simulation(
                 scenario_decisions.append((arrival0, 0, decision, haircut))
                 scenario_decisions.append((arrival1, 1, decision, haircut))
             arrivals = sorted(scenario_decisions, key=lambda row: (row[0], row[1]))
-            state: dict[str, tuple[Book, int, int]] = {}
+            state: dict[str, tuple[Book, int, int, datetime]] = {}
             remaining: dict[tuple[str, int, str, str], list[Decimal]] = {}
             event_idx = 0
+            gap_idx = 0
             generations: dict[str, int] = {}
             cash = {"kalshi": cash_per_venue, "polymarket_us": cash_per_venue}
             pending: dict[tuple[int, int], _PendingTrade] = {}
             for arrival_ns, leg_index, decision, current_haircut in arrivals:
-                while event_idx < len(book_events) and book_events[event_idx].mono_ns <= arrival_ns:
+                while True:
+                    next_book_ns = (
+                        book_events[event_idx].mono_ns if event_idx < len(book_events) else None
+                    )
+                    next_gap_ns = gap_events[gap_idx][0] if gap_idx < len(gap_events) else None
+                    if next_book_ns is None and next_gap_ns is None:
+                        break
+                    if next_gap_ns is not None and (
+                        next_book_ns is None or next_gap_ns <= next_book_ns
+                    ):
+                        if next_gap_ns > arrival_ns:
+                            break
+                        _gap_ns, gap_venue = gap_events[gap_idx]
+                        for old_key in tuple(state):
+                            if old_key.startswith(f"{gap_venue}:"):
+                                state.pop(old_key)
+                        gap_idx += 1
+                        continue
+                    if next_book_ns is None or next_book_ns > arrival_ns:
+                        break
                     event = book_events[event_idx]
                     key = _book_key(event.book)
                     venue = event.book.venue.value
                     generation = event.book.connection_generation
                     current_generation = generations.get(venue, 0)
-                    if generation < current_generation:
-                        event_idx += 1
-                        continue
-                    if generation > current_generation:
-                        generations[venue] = generation
-                        for old_key in tuple(state):
-                            if old_key.startswith(f"{venue}:"):
-                                state.pop(old_key)
-                    state[key] = (event.book, event.serial, event.mono_ns)
+                    if generation >= current_generation:
+                        if generation > current_generation:
+                            generations[venue] = generation
+                            for old_key in tuple(state):
+                                if old_key.startswith(f"{venue}:"):
+                                    state.pop(old_key)
+                        state[key] = (event.book, event.serial, event.mono_ns, event.wall)
                     event_idx += 1
                 result = _leg_result(decision.assessment, leg_index)
                 leg = decision.assessment.yes_leg if leg_index == 0 else decision.assessment.no_leg
@@ -179,20 +208,31 @@ def run_simulation(
                 trade.times[leg_index] = arrival_ns
                 fill = None
                 if book_state is not None and result.levels_consumed:
-                    book, book_serial, book_mono_ns = book_state
-                    max_age_ns = int(
+                    book, book_serial, book_mono_ns, book_wall = book_state
+                    arrival_wall = decision.assessment.computed_utc + timedelta(
+                        microseconds=(arrival_ns - decision.mono_ns) / 1000
+                    )
+                    max_age_s = (
                         replay_settings.min_poll_cadence_s
                         * replay_settings.poll_max_age_cadence_multiple
-                        * 1_000_000_000
                     )
-                    if (
-                        not book.valid
-                        or arrival_ns < book_mono_ns
-                        or arrival_ns - book_mono_ns > max_age_ns
-                    ):
+                    metadata = BookMeta(
+                        received_mono=book_mono_ns / 1_000_000_000,
+                        received_wall=book_wall,
+                        connection_generation=book.connection_generation,
+                        source="poll",
+                        cached=book_is_cached(book),
+                    )
+                    fresh, _reason = is_fresh(
+                        BookState(book, metadata),
+                        arrival_ns / 1_000_000_000,
+                        arrival_wall,
+                        max_age_s,
+                    )
+                    if not fresh or arrival_ns < book_mono_ns:
                         book_state = None
                 if book_state is not None and result.levels_consumed:
-                    book, book_serial, _book_mono_ns = book_state
+                    book, book_serial, _book_mono_ns, _book_wall = book_state
                     all_levels = _book_ladder(book, leg.side)
                     price_limit = max(level.price for level in result.levels_consumed)
                     remaining_key = (
@@ -268,6 +308,104 @@ def _book_key(book: Book) -> str:
 
 def _leg_key(leg: Leg) -> str:
     return f"{leg.venue.value}:{leg.market_id}"
+
+
+def _read_episodes(path: Path) -> tuple[tuple[object, ...], ...]:
+    with sqlite3.connect(path) as conn:
+        return tuple(
+            conn.execute(
+                """SELECT id, group_id, yes_market_key, no_market_key, qty, class,
+                          model_version, first_seen_utc, last_seen_utc
+                   FROM episodes ORDER BY first_seen_utc, id"""
+            ).fetchall()
+        )
+
+
+def _episode_decisions(
+    decisions: Sequence[Decision],
+    episodes: Sequence[tuple[object, ...]],
+    *,
+    max_gap_s: float,
+) -> list[Decision]:
+    """Keep one positive sizing trial for each replay episode observation run."""
+    selected: dict[int, Decision] = {}
+    untracked: dict[tuple[str, ...], list[Decision]] = {}
+    for decision in decisions:
+        assessment = decision.assessment
+        if (
+            assessment.net_profit is None
+            or assessment.net_profit <= ZERO
+            or assessment.yes_result is None
+            or assessment.no_result is None
+        ):
+            continue
+        matched = False
+        for row in episodes:
+            (
+                episode_id,
+                group_id,
+                yes_key,
+                no_key,
+                qty,
+                result_class,
+                model_version,
+                first_seen,
+                last_seen,
+            ) = row
+            if (
+                group_id != assessment.group_id
+                or yes_key != _leg_key(assessment.yes_leg)
+                or no_key != _leg_key(assessment.no_leg)
+                or Decimal(str(qty)) != assessment.requested_qty
+                or model_version != assessment.model_version
+                or result_class != assessment.result_class.value
+            ):
+                continue
+            first = datetime.fromisoformat(str(first_seen))
+            last = datetime.fromisoformat(str(last_seen))
+            if first <= assessment.computed_utc <= last:
+                selected.setdefault(int(episode_id), decision)
+                matched = True
+                break
+        if not matched:
+            key = (
+                assessment.group_id,
+                _leg_key(assessment.yes_leg),
+                _leg_key(assessment.no_leg),
+                str(assessment.requested_qty),
+                assessment.model_version,
+                assessment.result_class.value,
+            )
+            untracked.setdefault(key, []).append(decision)
+    fallback: list[Decision] = []
+    for items in untracked.values():
+        items.sort(key=lambda item: item.mono_ns)
+        previous_ns: int | None = None
+        for item in items:
+            if previous_ns is None or (item.mono_ns - previous_ns > max_gap_s * 1_000_000_000):
+                fallback.append(item)
+            previous_ns = item.mono_ns
+    return sorted(
+        [*selected.values(), *fallback],
+        key=lambda item: (item.mono_ns, item.assessment.group_id),
+    )
+
+
+def _paired_jitter(
+    decisions: Sequence[Decision],
+    delay_scenarios: Sequence[tuple[int, int]],
+    jitter_ms: int,
+    seed: int,
+) -> dict[tuple[int, tuple[int, int]], tuple[int, int]]:
+    rng = random.Random(seed)
+    return {
+        (decision_index, delay_pair): (
+            rng.randint(0, jitter_ms) if jitter_ms else 0,
+            rng.randint(0, jitter_ms) if jitter_ms else 0,
+        )
+        for delay_pair in delay_scenarios
+        for decision_index, _decision in enumerate(decisions)
+    }
 
 
 def _fill(
