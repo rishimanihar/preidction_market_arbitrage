@@ -241,6 +241,7 @@ def _pipe(
         review=review,
         clock=clock,
         interval_s=lambda: settings.discovery_interval_s,
+        metadata_interval_s=lambda: settings.metadata_refresh_interval_s,
         enqueue=enqueue,
         episodes=tracker,
     )
@@ -1098,3 +1099,68 @@ def _approved(group_id: str, reviewer: str, market_k: Market, market_p: Market) 
         decided_utc=WALL,
         exception_risk=False,
     )
+
+
+async def _wait_until(pred) -> None:
+    for _ in range(100):
+        if pred():
+            return
+        await asyncio.sleep(0)
+    raise AssertionError("condition not met")
+
+
+async def test_watched_rules_refresh_every_two_minutes(tmp_path) -> None:
+    pipe = _pipe(tmp_path)
+    task: asyncio.Task[None] | None = None
+    try:
+        await pipe.discover()
+        task = asyncio.create_task(pipe.discovery.run())
+        await _wait_until(lambda: pipe.clock.pending >= 1)
+        revised = "The game is scheduled for January 6, 2030. Includes overtime."
+        pipe.kalshi.markets[0] = pipe.kalshi.markets[0].model_copy(update={"rules_text": revised})
+        pipe.clock.advance(mono=120)
+        await _wait_until(
+            lambda: (
+                [row[0] for row in pipe.review_log()] == ["auto_approve", "revoke", "auto_approve"]
+            )
+        )
+        group = next(iter(pipe.registry.groups.values()))
+        assert group.status is GroupStatus.APPROVED
+        assert group.reviewer == AUTO_REVIEWER
+        assert 120.0 in pipe.clock.sleeps
+        assert 900.0 not in pipe.clock.sleeps
+    finally:
+        if task is not None:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        pipe.conn.close()
+
+
+async def test_manual_watched_refresh_revokes_without_auto_approve(tmp_path) -> None:
+    pipe = _pipe(tmp_path, review_mode="manual")
+    try:
+        await pipe.discover()
+        group = next(iter(pipe.registry.groups.values()))
+        members = []
+        for member in group.members:
+            market = pipe.registry.markets[f"{member.venue.value}:{member.market_id}"]
+            members.append(member.model_copy(update={"approved_rules_hash": rules_hash(market)}))
+        pipe.registry.groups[group.group_id] = group.model_copy(
+            update={
+                "status": GroupStatus.APPROVED,
+                "reviewer": "ada",
+                "members": tuple(members),
+            }
+        )
+        pipe.kalshi.markets[0] = pipe.kalshi.markets[0].model_copy(
+            update={"rules_text": "Changed settlement text for the manual refresh."}
+        )
+        await pipe.discovery.refresh_watched()
+        updated = pipe.registry.groups[group.group_id]
+        assert updated.status is GroupStatus.REVOKED
+        assert updated.reviewer == "ada"
+        actions = [row[0] for row in pipe.review_log()]
+        assert actions == ["revoke"]
+    finally:
+        pipe.conn.close()

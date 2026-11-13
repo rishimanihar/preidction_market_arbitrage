@@ -38,6 +38,7 @@ def test_defaults_match_plan() -> None:
     assert s.review_mode == "auto"
     assert s.fee_scenario == "conservative"
     assert s.discovery_interval_s == 900.0
+    assert s.metadata_refresh_interval_s == 120.0
 
 
 def test_env_vars_prefixed_and_venue_names(monkeypatch: pytest.MonkeyPatch) -> None:

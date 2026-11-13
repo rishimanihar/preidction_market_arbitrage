@@ -90,6 +90,7 @@ def build_collector(
         review=review,
         clock=clock,
         interval_s=lambda: settings.discovery_interval_s,
+        metadata_interval_s=lambda: settings.metadata_refresh_interval_s,
         enqueue=sink,
         episodes=tracker,
     )

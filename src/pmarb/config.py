@@ -94,6 +94,8 @@ class Settings(BaseSettings):
     review_mode: Literal["auto", "manual"] = "auto"
     # Catalog refresh. Adapters already spend this on the discovery rate bucket.
     discovery_interval_s: float = Field(default=900.0, gt=0)
+    # Plan §6.1: re-fetch rules on watched markets. The catalog stays at 15 min.
+    metadata_refresh_interval_s: float = Field(default=120.0, gt=0)
 
     @field_validator(
         "kalshi_member_precision",

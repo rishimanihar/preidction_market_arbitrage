@@ -20,6 +20,7 @@ from pmarb.collector.episodes import EpisodeTracker
 from pmarb.collector.persist import Op
 from pmarb.collector.registry import Registry
 from pmarb.collector.review_mode import ReviewMode, market_closed
+from pmarb.events import DISCOVERY, DISCOVERY_ERROR, METADATA_ERROR, METADATA_REFRESH, TIMING
 from pmarb.http import failure_cause, failure_detail
 from pmarb.matching.candidates import generate_candidates
 from pmarb.matching.rules import rules_hash
@@ -33,6 +34,8 @@ _log = logging.getLogger(__name__)
 LOOKBACK = timedelta(hours=12)
 HORIZON = timedelta(days=7)
 CLOSE_AFTER_MISSES = 2
+# Plan §6.1: refresh rules on watched (approved) markets every 2 minutes.
+METADATA_REFRESH_S = 120.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +64,7 @@ class Discovery:
         publish: Callable[[], None] | None = None,
         emit: Callable[[str | None, str, Mapping[str, object]], None] | None = None,
         stopping: Callable[[], bool] | None = None,
+        metadata_interval_s: Callable[[], float] | None = None,
     ) -> None:
         self._kalshi = kalshi
         self._polyus = polyus
@@ -68,6 +72,9 @@ class Discovery:
         self._review = review
         self._clock = clock
         self._interval_s = interval_s
+        self._metadata_interval_s = (
+            metadata_interval_s if metadata_interval_s is not None else (lambda: METADATA_REFRESH_S)
+        )
         self._enqueue = enqueue
         self._episodes = episodes
         self._publish = publish if publish is not None else (lambda: None)
@@ -86,12 +93,86 @@ class Discovery:
         self._stopping = lambda: bool(collector.stopping)  # type: ignore[attr-defined]
 
     async def run(self) -> None:
-        """Refresh, then sleep. Cancellation propagates. Adapter errors do not."""
+        """Catalog on the discovery interval, and watched rules every 2 minutes.
+
+        Cancellation propagates. Adapter errors do not.
+        """
+        next_catalog = self._clock.monotonic()
+        next_watched = self._clock.monotonic() + self._metadata_interval_s()
         while not self._stopping():
-            await self.run_once()
+            now = self._clock.monotonic()
+            if now >= next_catalog:
+                await self.run_once()
+                next_catalog = self._clock.monotonic() + self._interval_s()
             if self._stopping():
                 return
-            await self._clock.sleep(self._interval_s())
+            now = self._clock.monotonic()
+            if now >= next_watched:
+                await self.refresh_watched()
+                next_watched = self._clock.monotonic() + self._metadata_interval_s()
+            if self._stopping():
+                return
+            delay = min(next_catalog, next_watched) - self._clock.monotonic()
+            if delay > 0:
+                await self._clock.sleep(delay)
+
+    async def refresh_watched(self) -> None:
+        """Re-fetch approved markets and revoke when their rules hash changes.
+
+        Auto mode re-approves through the same path as a catalog pass, so D27
+        stays indicative-only. Markets that are not approved are left alone.
+        """
+        refreshed: dict[str, Market] = {}
+        errors = 0
+        for venue, market_id in self._watched():
+            if self._stopping():
+                return
+            adapter = self._kalshi if venue is Venue.KALSHI else self._polyus
+            try:
+                market = await adapter.get_market(market_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - one market must not stop the loop
+                errors += 1
+                detail = failure_detail(exc)
+                detail["market_id"] = market_id
+                self._emit(str(venue), METADATA_ERROR, detail)
+                continue
+            stored = self._ingest(market)
+            if stored is not None:
+                refreshed[stored.market_key] = stored
+        revoked = 0
+        approved = 0
+        if refreshed:
+            merged = dict(self._registry.markets)
+            merged.update(refreshed)
+            revoked = self._review.revoke_changed(merged)
+            approved = self._review.auto_approve()
+            self._publish()
+        self._emit(
+            None,
+            METADATA_REFRESH,
+            {
+                "markets": len(refreshed),
+                "revoked": revoked,
+                "auto_approved": approved,
+                "errors": errors,
+            },
+        )
+
+    def _watched(self) -> list[tuple[Venue, str]]:
+        seen: set[tuple[str, str]] = set()
+        targets: list[tuple[Venue, str]] = []
+        for group in self._registry.groups.values():
+            if group.status is not GroupStatus.APPROVED:
+                continue
+            for member in group.members:
+                key = (member.venue.value, member.market_id)
+                if key in seen:
+                    continue
+                seen.add(key)
+                targets.append((member.venue, member.market_id))
+        return targets
 
     async def run_once(self) -> None:
         """List both venues, then match, review, and publish as one write."""
@@ -102,7 +183,7 @@ class Discovery:
             await self._collect(adapter, start, end) for adapter in (self._kalshi, self._polyus)
         ]
         self._commit(listings, start, end)
-        self._emit(None, "timing", {"phase": "rules_hash", "duration_s": self._hash_seconds})
+        self._emit(None, TIMING, {"phase": "rules_hash", "duration_s": self._hash_seconds})
         self._hash_seconds = 0.0
 
     async def _collect(self, adapter: VenueAdapter, start: datetime, end: datetime) -> _Listing:
@@ -125,7 +206,7 @@ class Discovery:
                 type(exc).__name__,
                 exc,
             )
-            self._emit(str(adapter.venue), "discovery_error", failure_detail(exc))
+            self._emit(str(adapter.venue), DISCOVERY_ERROR, failure_detail(exc))
             listing = _Listing(adapter.venue, None, ())
         else:
             listing = _Listing(adapter.venue, {market.market_id for market in found}, tuple(found))
@@ -134,7 +215,7 @@ class Discovery:
         attempts = after.get("attempts", 0) - before.get("attempts", 0)
         self._emit(
             str(adapter.venue),
-            "timing",
+            TIMING,
             {
                 "phase": "discovery_venue",
                 "duration_s": max(0.0, self._clock.monotonic() - started),
@@ -175,7 +256,7 @@ class Discovery:
         self._publish()
         self._emit(
             None,
-            "discovery",
+            DISCOVERY,
             {
                 "markets": len(refreshed),
                 "new_groups": new_groups,
@@ -202,7 +283,7 @@ class Discovery:
         except (TypeError, ValueError) as exc:
             self._emit(
                 str(market.venue),
-                "discovery_error",
+                DISCOVERY_ERROR,
                 {
                     "error_type": type(exc).__name__,
                     "error": str(exc)[:500],
