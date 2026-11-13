@@ -1,0 +1,39 @@
+name: Publish PR assessment
+on:
+  workflow_dispatch:
+    inputs:
+      report:
+        description: Reviewed Markdown under reviews/
+        required: true
+        default: reviews/2026-11-12.md
+  push:
+    branches: [main]
+    paths: ['reviews/*.md']
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: assessment-publisher
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Test publisher
+        run: python3 -m unittest discover -s tools -p 'test_publish_review.py' -v
+      - name: Publish reviewed assessment
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPORT: ${{ inputs.report }}
+        run: |
+          if [ -n "$REPORT" ]; then
+            python3 tools/publish_review.py --repo "$GITHUB_REPOSITORY" --report "$REPORT" --publish
+          else
+            for report in reviews/*.md; do
+              [ -f "$report" ] || continue
+              python3 tools/publish_review.py --repo "$GITHUB_REPOSITORY" --report "$report" --publish
+            done
+          fi
