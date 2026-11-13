@@ -1,0 +1,66 @@
+{
+  "market": {
+    "id": "900001",
+    "slug": "aec-nfl-aaa-bbb-2030-01-06",
+    "question": "Synthetic winner: Team Alpha",
+    "title": "Team Alpha",
+    "titleShort": "Team Alpha",
+    "subtitle": "",
+    "description": "Synthetic rules for Team Alpha. The market resolves on the final result of the synthetic game. If the game goes to overtime, the result is the final score after overtime. If the game ends in a tie, both sides settle at $0.50.",
+    "category": "sports",
+    "eventSubcategory": "FOOTBALL",
+    "active": true,
+    "closed": false,
+    "archived": false,
+    "hidden": false,
+    "status": "MARKET_STATUS_OPEN",
+    "ep3Status": "OPEN",
+    "marketSides": [
+      {
+        "id": "9000011",
+        "marketId": 900001,
+        "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+        "identifier": "aec-nfl-aaa-bbb-2030-01-06",
+        "description": "Team Alpha",
+        "long": true,
+        "tradable": true,
+        "price": "0.4600",
+        "quote": {
+          "value": "0.4600",
+          "currency": "USD"
+        }
+      },
+      {
+        "id": "9000012",
+        "marketId": 900001,
+        "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+        "identifier": "aec-nfl-aaa-bbb-2030-01-06",
+        "description": "Other side",
+        "long": false,
+        "tradable": true,
+        "price": "0.540",
+        "quote": {
+          "value": "0.540",
+          "currency": "USD"
+        }
+      }
+    ],
+    "startDate": "2030-01-01T00:00:00Z",
+    "startTime": "2030-01-06T00:00:00Z",
+    "endDate": "2030-01-07T00:00:00Z",
+    "createdAt": "2030-01-01T00:01:00Z",
+    "updatedAt": "2030-01-02T00:00:00Z",
+    "ep3SyncedAt": "2030-01-01T12:00:00Z",
+    "sportsMarketType": "football_team_full_game_winner",
+    "marketType": "moneyline",
+    "orderPriceMinTickSize": 0.01,
+    "minimumTradeQty": 1,
+    "comboEnabled": false,
+    "feeCoefficient": 0.095,
+    "outcomes": "[\"Team Alpha\",\"Other side\"]",
+    "outcomePrices": "[\"0.1200\",\"0.8800\"]",
+    "tags": [],
+    "politics": null,
+    "assetPriceTerms": null
+  }
+}
