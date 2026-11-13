@@ -330,13 +330,8 @@ def _has_good_member_after(path: Path, offset: int) -> bool:
     return False
 
 
-def repair_tail(path: Path) -> RepairResult:
-    """Truncate a torn final member (truncated or bad CRC) off ``path``.
-
-    Complete earlier members are never touched. If a bad member is followed by decodable data the
-    damage is mid-file, not a torn tail, and ``CorruptLogError`` is raised without modifying the
-    file. The caller should log a ``collector_events`` gap when ``result.repaired``.
-    """
+def _classify_tail(path: Path) -> RepairResult:
+    """Scan ``path`` and describe a torn final member. Does not modify the file."""
     path = Path(path)
     original = path.stat().st_size
     scan = _scan(path)
@@ -344,11 +339,34 @@ def repair_tail(path: Path) -> RepairResult:
         return RepairResult(path, original, original, len(scan.members))
     if _has_good_member_after(path, scan.bad_offset):
         raise CorruptLogError(path, scan.bad_offset, scan.detail + " (not at tail)")
-    with open(path, "r+b") as f:
-        f.truncate(scan.bad_offset)
+    return RepairResult(path, original, scan.bad_offset, len(scan.members))
+
+
+def inspect_tail(path: Path) -> RepairResult:
+    """Report a torn final gzip member without modifying ``path``.
+
+    ``repaired`` means a torn tail is present (``truncated_bytes > 0``), not that
+    this function truncated anything. Mid-file damage raises :class:`CorruptLogError`.
+    Replay uses this so a recording stays intact; :func:`repair_tail` is what truncates.
+    """
+    return _classify_tail(path)
+
+
+def repair_tail(path: Path) -> RepairResult:
+    """Truncate a torn final member (truncated or bad CRC) off ``path``.
+
+    Complete earlier members are never touched. If a bad member is followed by decodable data the
+    damage is mid-file, not a torn tail, and ``CorruptLogError`` is raised without modifying the
+    file. The caller should log a ``collector_events`` gap when ``result.repaired``.
+    """
+    result = _classify_tail(path)
+    if not result.repaired:
+        return result
+    with open(result.path, "r+b") as f:
+        f.truncate(result.good_size)
         f.flush()
         os.fsync(f.fileno())
-    return RepairResult(path, original, scan.bad_offset, len(scan.members))
+    return result
 
 
 def list_log_files(root: Path, venue: str, *, checkpoints: bool = False) -> list[Path]:

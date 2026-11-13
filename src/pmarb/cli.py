@@ -48,6 +48,76 @@ def _database_path(data_dir: Path) -> Path:
     return data_dir / "pmarb.sqlite"
 
 
+def _same_database(output: Path, database: Path) -> bool:
+    """True when ``output`` is the database file, including a hard link."""
+    resolved = output.resolve()
+    database_resolved = Path(database).resolve()
+    if resolved == database_resolved:
+        return True
+    if resolved.exists() and database_resolved.exists():
+        try:
+            return resolved.samefile(database_resolved)
+        except OSError:
+            return False
+    return False
+
+
+def _checkout_for(output: Path, repo: Path | None) -> Path | None:
+    """The nearest checkout that contains ``output``, or ``repo`` when none does."""
+    resolved = output.resolve()
+    for ancestor in (
+        output.parent,
+        *output.parent.parents,
+        resolved.parent,
+        *resolved.parent.parents,
+    ):
+        if (ancestor / ".git").exists():
+            return ancestor
+    return repo
+
+
+def _under_docs(output: Path, repo: Path | None) -> bool:
+    """True when ``output`` is under ``repo/docs``, lexically or via a symlink."""
+    if repo is None:
+        return False
+    resolved = output.resolve()
+    docs = (repo / "docs").resolve()
+    return (
+        output == repo / "docs"
+        or repo / "docs" in output.parents
+        or resolved == docs
+        or docs in resolved.parents
+    )
+
+
+def _inside_directory(path: Path, root: Path) -> bool:
+    """True when ``path`` is a file inside ``root`` on both the lexical and resolved paths."""
+    lexical = Path(os.path.abspath(path))
+    resolved = lexical.resolve()
+    root_lexical = Path(os.path.abspath(root))
+    root_resolved = root_lexical.resolve()
+    return root_lexical in lexical.parents and root_resolved in resolved.parents
+
+
+def _refuse_replay_output(
+    output: Path,
+    database: Path,
+    data_dir: Path,
+    parser: argparse.ArgumentParser,
+) -> None:
+    """Refuse an output that overwrites the source, lands in docs/, or leaves the data dir."""
+    output = Path(os.path.abspath(output))
+    if _same_database(output, database):
+        parser.error("replay output cannot overwrite the source database")
+    if _under_docs(output, _checkout_for(output, _repo_root())):
+        parser.error(
+            "replay output contains recorded data and cannot be written "
+            "under the checkout docs/ directory"
+        )
+    if not _inside_directory(output, data_dir):
+        parser.error("replay output must stay inside the data dir")
+
+
 def _report(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     try:
         settings = load_settings()
@@ -85,36 +155,13 @@ def _report(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     else:
         output = Path(args.out).expanduser()
     output = Path(os.path.abspath(output))
-    resolved = output.resolve()
-    database_resolved = Path(database).resolve()
-    same_database = resolved == database_resolved
-    if not same_database and resolved.exists() and database_resolved.exists():
-        try:
-            same_database = resolved.samefile(database_resolved)
-        except OSError:
-            same_database = False
-    if same_database:
+    if _same_database(output, Path(database)):
         parser.error("report output cannot overwrite the input database")
-    for ancestor in (
-        output.parent,
-        *output.parent.parents,
-        resolved.parent,
-        *resolved.parent.parents,
-    ):
-        if (ancestor / ".git").exists():
-            repo = ancestor
-            break
-    if repo is not None:
-        docs = (repo / "docs").resolve()
-        if (
-            output == repo / "docs"
-            or repo / "docs" in output.parents
-            or resolved == docs
-            or docs in resolved.parents
-        ):
-            parser.error(
-                "reports contain live data and cannot be written under the checkout docs/ directory"
-            )
+    repo = _checkout_for(output, repo)
+    if _under_docs(output, repo):
+        parser.error(
+            "reports contain live data and cannot be written under the checkout docs/ directory"
+        )
     try:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(rendered, encoding="utf-8")
@@ -326,6 +373,53 @@ def _scan(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         return
 
 
+def _replay(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """Replay a raw log, or compare that replay with assessments already stored."""
+    from pmarb.replay.clock import LookaheadError
+    from pmarb.replay.engine import ReplayEngine, ReplayError, format_verify_report, verify_replay
+
+    try:
+        settings = load_settings(args.env_file)
+    except (ValidationError, OSError):
+        print("FAIL config: settings are invalid; check the PMARB_* configuration", file=sys.stderr)
+        return 1
+    raw = Path(args.raw).expanduser()
+    database = Path(args.db).expanduser()
+    if args.replay_command == "run":
+        output = Path(args.out).expanduser()
+        _refuse_replay_output(output, database, settings.data_dir, parser)
+    try:
+        if args.replay_command == "verify":
+            report = verify_replay(
+                raw,
+                database,
+                since=args.since,
+                until=args.until,
+                settings=settings,
+            )
+        else:
+            result = ReplayEngine(
+                raw,
+                database,
+                output,
+                since=args.since,
+                until=args.until,
+                settings=settings,
+            ).run()
+    except (ReplayError, LookaheadError, OSError, sqlite3.Error, ValueError) as exc:
+        print(f"FAIL replay: {exc}", file=sys.stderr)
+        return 1
+    if args.replay_command == "verify":
+        sys.stdout.write(format_verify_report(report))
+        return 0 if report.ok else 1
+    print(
+        f"envelopes={result.envelopes} gaps={len(result.gaps)} "
+        f"assessments={result.assessments} episodes={result.episodes}"
+    )
+    print(result.out_db)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="pmarb")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -359,15 +453,27 @@ def main(argv: list[str] | None = None) -> None:
     report.add_argument("--until", default=None, help="inclusive ISO timestamp upper bound")
     report.add_argument("--format", choices=("md", "json"), default="md")
     report.add_argument("--out", default=None, help="output path; use - for stdout")
-    commands.add_parser("replay", help="replay recorded data")
+    replay = commands.add_parser("replay", help="replay a recorded raw log")
+    replay_commands = replay.add_subparsers(dest="replay_command", required=True)
+    replay_run = replay_commands.add_parser("run", help="replay into a new database")
+    replay_verify = replay_commands.add_parser(
+        "verify",
+        help="compare a replay with assessments stored in the source database",
+    )
+    for sub in (replay_run, replay_verify):
+        sub.add_argument("--raw", type=Path, required=True, help="raw log root (contains raw/)")
+        sub.add_argument("--db", type=Path, required=True, help="source database, opened read-only")
+        sub.add_argument("--since", default=None, help="inclusive ISO-8601 lower bound on recv_utc")
+        sub.add_argument("--until", default=None, help="inclusive ISO-8601 upper bound on recv_utc")
+    replay_run.add_argument("--out", type=Path, required=True, help="new SQLite database to write")
     args = parser.parse_args(argv)
 
     if args.command == "scan":
         _scan(args, scan)
         return
     if args.command == "replay":
-        print("not implemented yet (phase 2)")
-        raise SystemExit(2)
+        active = replay_run if args.replay_command == "run" else replay_verify
+        raise SystemExit(_replay(args, active))
     if args.command == "report":
         raise SystemExit(_report(args, parser))
     if args.command == "review":
