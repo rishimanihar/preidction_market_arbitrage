@@ -122,12 +122,14 @@ def test_not_a_git_repo_skipped(repo: Path) -> None:
     assert_no_tracked_secrets(repo, ["abc-SECRET-123"])
 
 
+@posix_only
 def test_load_uses_package_root_not_cwd(outside: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     key = make_key(outside)
     monkeypatch.chdir(outside)
     assert load_private_key(key) == b"synthetic-key-bytes"
 
 
+@posix_only
 def test_symlink_is_not_followed(repo: Path, outside: Path) -> None:
     real = make_key(outside)
     link = outside / "alias.pem"
@@ -136,6 +138,7 @@ def test_symlink_is_not_followed(repo: Path, outside: Path) -> None:
         load_private_key(link, repo)
 
 
+@posix_only
 def test_rejects_key_owned_by_someone_else(
     repo: Path, outside: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

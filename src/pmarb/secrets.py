@@ -195,8 +195,10 @@ def _configured_key_paths() -> list[Path]:
 
 def _fingerprint(path: Path) -> _KeyFingerprint | None:
     """SHA-256 of a configured key body. Unreadable paths are skipped."""
+    if path.is_symlink():
+        return None
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     except OSError:
         return None
     try:
