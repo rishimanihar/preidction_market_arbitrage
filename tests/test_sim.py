@@ -15,7 +15,12 @@ from pmarb.config import Settings
 from pmarb.fees.kalshi import KalshiFeeModel
 from pmarb.fees.polymarket_us import PolymarketUSFeeModel
 from pmarb.models import Level, Side
-from pmarb.sim.engine import Decision, _episode_decisions, run_simulation
+from pmarb.sim.engine import (
+    Decision,
+    _episode_decisions,
+    _haircut_fill_cap,
+    run_simulation,
+)
 from pmarb.sim.report import render_sim_report
 from pmarb.storage.db import open_writer, upsert_group
 from tests import test_replay as replay
@@ -235,6 +240,14 @@ def test_haircut_scenarios_share_jitter_and_are_monotone(tmp_path: Path) -> None
     )
     edges = [Decimal(row[4]) for row in rows]
     assert edges == sorted(edges, reverse=True)
+
+
+def test_higher_haircut_cannot_create_a_competing_order_fill() -> None:
+    requested = Decimal(10)
+    assert _haircut_fill_cap(requested, Decimal(0), "fok") == 0
+    assert _haircut_fill_cap(requested, Decimal(9), "fok") == 0
+    assert _haircut_fill_cap(requested, requested, "fok") == requested
+    assert _haircut_fill_cap(requested, Decimal(4), "ioc") == Decimal(4)
 
 
 def test_delay_on_decaying_gap_reduces_fills_and_edge(tmp_path: Path) -> None:

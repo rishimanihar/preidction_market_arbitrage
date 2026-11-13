@@ -134,11 +134,12 @@ def run_simulation(
     delay_scenarios = list(
         dict.fromkeys([(value, value) for value in delays_ms] + list(asymmetric))
     )
-    haircuts = tuple(dict.fromkeys(haircuts))
+    haircuts = tuple(sorted(set(haircuts)))
     if not delay_scenarios or not haircuts:
         raise ValueError("at least one delay scenario and one haircut are required")
     scenarios = [(delay_pair, haircut) for delay_pair in delay_scenarios for haircut in haircuts]
     jitter = _paired_jitter(decisions, delay_scenarios, jitter_ms, seed)
+    prior_fills: dict[tuple[int, int], dict[int, tuple[Decimal, Decimal]]] = {}
     out_db.parent.mkdir(parents=True, exist_ok=True)
     if out_db.exists():
         out_db.unlink()
@@ -148,14 +149,16 @@ def run_simulation(
         count = 0
         for delay_pair, haircut in scenarios:
             scenario_decisions = []
+            previous_fills = prior_fills.get(delay_pair)
+            current_fills: dict[int, list[Decimal]] = {}
             for decision_index, decision in enumerate(decisions):
                 j0, j1 = jitter[(decision_index, delay_pair)]
                 arrival0 = decision.mono_ns + (delay_pair[0] + j0) * 1_000_000
                 arrival1 = decision.mono_ns + (delay_pair[1] + j1) * 1_000_000
                 assessment = decision.assessment
                 assert assessment.yes_result is not None and assessment.no_result is not None
-                scenario_decisions.append((arrival0, 0, decision, haircut))
-                scenario_decisions.append((arrival1, 1, decision, haircut))
+                scenario_decisions.append((arrival0, 0, decision_index, decision, haircut))
+                scenario_decisions.append((arrival1, 1, decision_index, decision, haircut))
             arrivals = sorted(scenario_decisions, key=lambda row: (row[0], row[1]))
             state: dict[str, tuple[Book, int, int, datetime]] = {}
             remaining: dict[tuple[str, int, str, str], list[Decimal]] = {}
@@ -164,7 +167,7 @@ def run_simulation(
             generations: dict[str, int] = {}
             cash = {"kalshi": cash_per_venue, "polymarket_us": cash_per_venue}
             pending: dict[tuple[int, int], _PendingTrade] = {}
-            for arrival_ns, leg_index, decision, current_haircut in arrivals:
+            for arrival_ns, leg_index, decision_index, decision, current_haircut in arrivals:
                 while True:
                     next_book_ns = (
                         book_events[event_idx].mono_ns if event_idx < len(book_events) else None
@@ -208,6 +211,10 @@ def run_simulation(
                 )
                 trade.times[leg_index] = arrival_ns
                 fill = None
+                requested = decision.assessment.requested_qty
+                if previous_fills is not None:
+                    prior_qty = previous_fills.get(decision_index, (ZERO, ZERO))[leg_index]
+                    requested = _haircut_fill_cap(requested, prior_qty, order)
                 if book_state is not None and result.levels_consumed:
                     book, book_serial, book_mono_ns, book_wall = book_state
                     arrival_wall = decision.assessment.computed_utc + timedelta(
@@ -254,10 +261,10 @@ def run_simulation(
                     eligible_indexes = [index for index, _level in eligible]
                     ladder = [level for _index, level in eligible]
                     model = fee_models.get(leg_key)
-                    if model is not None:
+                    if model is not None and requested > ZERO:
                         fill = _fill(
                             ladder,
-                            decision.assessment.requested_qty,
+                            requested,
                             order,
                             cash[leg.venue.value],
                             model,
@@ -274,6 +281,9 @@ def run_simulation(
                             cash[leg.venue.value] -= fill[1] + fill[2]
                 trade.fills[leg_index] = fill
                 trade.done[leg_index] = True
+                current_fills.setdefault(decision_index, [ZERO, ZERO])[leg_index] = (
+                    fill[0] if fill is not None else ZERO
+                )
                 if trade.done == [True, True]:
                     count += 1
                     _insert_trade(
@@ -288,6 +298,10 @@ def run_simulation(
                         cash,
                     )
                     pending.pop((id(decision), delay_pair[0] + delay_pair[1]), None)
+            prior_fills[delay_pair] = {
+                decision_index: (quantities[0], quantities[1])
+                for decision_index, quantities in current_fills.items()
+            }
         _write_summaries(conn, scenarios, len(decisions), order)
         conn.commit()
         return {"opportunities": len(decisions), "trades": count, "scenarios": len(scenarios)}
@@ -407,6 +421,13 @@ def _paired_jitter(
         for delay_pair in delay_scenarios
         for decision_index, _decision in enumerate(decisions)
     }
+
+
+def _haircut_fill_cap(requested: Decimal, prior_filled: Decimal, order: str) -> Decimal:
+    """Pair haircut trials so reduced depth cannot create a new later fill."""
+    if prior_filled <= ZERO or (order == "fok" and prior_filled < requested):
+        return ZERO
+    return min(requested, prior_filled)
 
 
 def _fill(
