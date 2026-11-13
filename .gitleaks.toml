@@ -1,0 +1,22 @@
+title = "pmarb gitleaks config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "kalshi-api-key-id"
+description = "Kalshi API key id assigned to a variable"
+regex = '''(?i)kalshi[_-]?(api)?[_-]?key[_-]?id[ \t]*[:=][ \t]*["']?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'''
+tags = ["kalshi", "key"]
+
+[[rules]]
+id = "polyus-api-key"
+description = "Polymarket US API key assigned to a variable"
+regex = '''(?i)(polyus|polymarket)[_-]?(api)?[_-]?(key|secret)[_-]?(id)?[ \t]*[:=][ \t]*["']?[A-Za-z0-9+/=_-]{16,}'''
+tags = ["polymarket", "key"]
+
+[[rules]]
+id = "access-signature-header"
+description = "Captured signed request header (KALSHI-ACCESS-SIGNATURE / X-PM-*)"
+regex = '''(?i)(kalshi-access-signature|x-pm-signature)["']?[ \t]*[:=][ \t]*["']?[A-Za-z0-9+/=]{40,}'''
+tags = ["signature"]

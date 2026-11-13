@@ -1,0 +1,31 @@
+canonical_id,league,display_name,city_or_school,nickname,kalshi_code,polymarket_code,aliases,source
+nba:ATL,nba,Atlanta Hawks,Atlanta,Hawks,ATL,atl,ATL,observed
+nba:BKN,nba,Brooklyn Nets,Brooklyn,Nets,BKN,bkn,BKN,observed
+nba:BOS,nba,Boston Celtics,Boston,Celtics,BOS,bos,BOS,observed
+nba:CHA,nba,Charlotte Hornets,Charlotte,Hornets,CHA,cha,CHA,observed
+nba:CHI,nba,Chicago Bulls,Chicago,Bulls,CHI,chi,CHI,observed
+nba:CLE,nba,Cleveland Cavaliers,Cleveland,Cavaliers,CLE,cle,CLE,observed
+nba:DAL,nba,Dallas Mavericks,Dallas,Mavericks,DAL,dal,DAL,observed
+nba:DEN,nba,Denver Nuggets,Denver,Nuggets,DEN,den,DEN,observed
+nba:DET,nba,Detroit Pistons,Detroit,Pistons,DET,det,DET,observed
+nba:GSW,nba,Golden State Warriors,Golden State,Warriors,GSW,gs,GS Warriors|Golden St Warriors|GS,observed
+nba:HOU,nba,Houston Rockets,Houston,Rockets,HOU,hou,HOU,observed
+nba:IND,nba,Indiana Pacers,Indiana,Pacers,IND,ind,IND,observed
+nba:LAC,nba,Los Angeles Clippers,Los Angeles,Clippers,LAC,lac,LA Clippers|Los Angeles C|LAC,observed
+nba:LAL,nba,Los Angeles Lakers,Los Angeles,Lakers,LAL,lal,LA Lakers|Los Angeles L|LAL,observed
+nba:MEM,nba,Memphis Grizzlies,Memphis,Grizzlies,MEM,mem,MEM,observed
+nba:MIA,nba,Miami Heat,Miami,Heat,MIA,mia,MIA,observed
+nba:MIL,nba,Milwaukee Bucks,Milwaukee,Bucks,MIL,mil,MIL,observed
+nba:MIN,nba,Minnesota Timberwolves,Minnesota,Timberwolves,MIN,min,MIN,observed
+nba:NOP,nba,New Orleans Pelicans,New Orleans,Pelicans,NOP,no,NO,observed
+nba:NYK,nba,New York Knicks,New York,Knicks,NYK,ny,NY Knicks|NY,observed
+nba:OKC,nba,Oklahoma City Thunder,Oklahoma City,Thunder,OKC,okc,OKC,observed
+nba:ORL,nba,Orlando Magic,Orlando,Magic,ORL,orl,ORL,observed
+nba:PHI,nba,Philadelphia 76ers,Philadelphia,76ers,PHI,phi,Sixers|PHI,observed
+nba:PHX,nba,Phoenix Suns,Phoenix,Suns,PHX,pho,PHO,observed
+nba:POR,nba,Portland Trail Blazers,Portland,Trail Blazers,POR,por,Blazers|POR,observed
+nba:SAC,nba,Sacramento Kings,Sacramento,Kings,SAC,sac,SAC,observed
+nba:SAS,nba,San Antonio Spurs,San Antonio,Spurs,SAS,sa,SA,observed
+nba:TOR,nba,Toronto Raptors,Toronto,Raptors,TOR,tor,TOR,observed
+nba:UTA,nba,Utah Jazz,Utah,Jazz,UTA,uta,UTA,observed
+nba:WAS,nba,Washington Wizards,Washington,Wizards,WAS,was,WAS,observed

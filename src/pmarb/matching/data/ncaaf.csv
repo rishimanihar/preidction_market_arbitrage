@@ -1,0 +1,261 @@
+canonical_id,league,display_name,city_or_school,nickname,kalshi_code,polymarket_code,aliases,source
+ncaaf:AAMU,ncaaf,Alabama A&M,Alabama A&M,Bulldogs,AAMU,alaam,AAMU,observed
+ncaaf:AC,ncaaf,Abilene Christian,Abilene Christian,Wildcats,AC,abchr,ACU,observed
+ncaaf:AFA,ncaaf,Air Force,Air Force,Falcons,AFA,airf,AFA,observed
+ncaaf:AKR,ncaaf,Akron,Akron,Zips,AKR,akron,AKR,observed
+ncaaf:ALA,ncaaf,Alabama,Alabama,Crimson Tide,ALA,ala,BAMA,observed
+ncaaf:ALBY,ncaaf,UAlbany,UAlbany,Great Danes,ALBY,albny,University at Albany|ALBY,observed
+ncaaf:ALCN,ncaaf,Alcorn State,Alcorn State,Braves,ALCN,alcst,Alcorn St.|ALCN,observed
+ncaaf:ALST,ncaaf,Alabama State,Alabama State,Hornets,ALST,alast,Alabama St.|ALST,observed
+ncaaf:APP,ncaaf,Appalachian State,Appalachian State,Mountaineers,APP,applst,Appalachian St.|APP,observed
+ncaaf:ARIZ,ncaaf,Arizona,Arizona,Wildcats,ARIZ,arz,ARIZ,observed
+ncaaf:ARK,ncaaf,Arkansas,Arkansas,Razorbacks,ARK,ark,ARK,observed
+ncaaf:ARPB,ncaaf,Arkansas-Pine Bluff,Arkansas-Pine Bluff,Golden Lions,ARPB,arpb,ARPB,observed
+ncaaf:ARST,ncaaf,Arkansas State,Arkansas State,Red Wolves,ARST,arkst,Arkansas St.|ARST,observed
+ncaaf:ASU,ncaaf,Arizona State,Arizona State,Sun Devils,ASU,arzst,Arizona St.|ASU,observed
+ncaaf:AUB,ncaaf,Auburn,Auburn,Tigers,AUB,aubrn,AUB,observed
+ncaaf:BALL,ncaaf,Ball State,Ball State,Cardinals,BALL,ballst,Ball St.|BALL,observed
+ncaaf:BAY,ncaaf,Baylor,Baylor,Bears,BAY,bayl,BAY,observed
+ncaaf:BC,ncaaf,Boston College,Boston College,Eagles,BC,boscol,BC,observed
+ncaaf:BRWN,ncaaf,Brown,Brown,Bears,BRWN,brwn,BRWN,observed
+ncaaf:BRY,ncaaf,Bryant,Bryant,Bulldogs,BRY,bryant,BRY,observed
+ncaaf:BSU,ncaaf,Boise State,Boise State,Broncos,BSU,boise,Boise St.|BSU,observed
+ncaaf:BUCK,ncaaf,Bucknell,Bucknell,Bison,BUCK,buck,BUCK,observed
+ncaaf:BUFF,ncaaf,Buffalo,Buffalo,Bulls,BUFF,buf,BUFF,observed
+ncaaf:BUT,ncaaf,Butler,Butler,Bulldogs,BUT,but,BUT,observed
+ncaaf:BYU,ncaaf,BYU,BYU,Cougars,BYU,byu,,observed
+ncaaf:CAL,ncaaf,California,California,Golden Bears,CAL,cah,CAL,observed
+ncaaf:CAMP,ncaaf,Campbell,Campbell,Fighting Camels,CAMP,camp,CAMP,observed
+ncaaf:CARK,ncaaf,Central Arkansas,Central Arkansas,Bears,CARK,cark,UCA,observed
+ncaaf:CCAR,ncaaf,Coastal Carolina,Coastal Carolina,Chanticleers,CCAR,coast,CCAR,observed
+ncaaf:CCSU,ncaaf,Central Connecticut State,Central Connecticut State,Blue Devils,CCSU,cencon,Central Connecticut St.|CCSU,observed
+ncaaf:CHAR,ncaaf,Charlotte,Charlotte,49ers,CHAR,charlt,CHAR,observed
+ncaaf:CHAT,ncaaf,Chattanooga,Chattanooga,Mocs,CHAT,chat,CHAT,observed
+ncaaf:CHSO,ncaaf,Charleston Southern,Charleston Southern,Buccaneers,CHSO,chsou,CHSO,observed
+ncaaf:CIN,ncaaf,Cincinnati,Cincinnati,Bearcats,CIN,cin,CIN,observed
+ncaaf:CIT,ncaaf,The Citadel,The Citadel,Bulldogs,CIT,cita,CIT,observed
+ncaaf:CLEM,ncaaf,Clemson,Clemson,Tigers,CLEM,clmsn,CLEM,observed
+ncaaf:CLMB,ncaaf,Columbia,Columbia,Lions,CLMB,clmb,CLMB,observed
+ncaaf:CMU,ncaaf,Central Michigan,Central Michigan,Chippewas,CMU,cmich,CMU,observed
+ncaaf:COLG,ncaaf,Colgate,Colgate,Raiders,COLG,colg,COLG,observed
+ncaaf:COLO,ncaaf,Colorado,Colorado,Buffaloes,COLO,col,COLO,observed
+ncaaf:CONN,ncaaf,UConn,UConn,Huskies,CONN,uconn,UCONN,observed
+ncaaf:COOK,ncaaf,Bethune-Cookman,Bethune-Cookman,Wildcats,COOK,bcook,COOK,observed
+ncaaf:COR,ncaaf,Cornell,Cornell,Big Red,COR,cor,COR,observed
+ncaaf:CSU,ncaaf,Colorado State,Colorado State,Rams,CSU,colst,Colorado St.|CSU,observed
+ncaaf:DART,ncaaf,Dartmouth,Dartmouth,Big Green,DART,dart,DART,observed
+ncaaf:DAV,ncaaf,Davidson,Davidson,Wildcats,DAV,dav,DAV,observed
+ncaaf:DAY,ncaaf,Dayton,Dayton,Flyers,DAY,day,DAY,observed
+ncaaf:DEL,ncaaf,Delaware,Delaware,Fightin' Blue Hens,DEL,del,DEL,observed
+ncaaf:DRKE,ncaaf,Drake,Drake,Bulldogs,DRKE,drake,DRKE,observed
+ncaaf:DSU,ncaaf,Delaware State,Delaware State,Hornets,DSU,delst,Delaware St.|DSU,observed
+ncaaf:DUKE,ncaaf,Duke,Duke,Blue Devils,DUKE,duke,DUKE,observed
+ncaaf:DUQ,ncaaf,Duquesne,Duquesne,Dukes,DUQ,duq,DUQ,observed
+ncaaf:ECU,ncaaf,East Carolina,East Carolina,Pirates,ECU,ecar,ECU,observed
+ncaaf:EIU,ncaaf,Eastern Illinois,Eastern Illinois,Panthers,EIU,eill,EIU,observed
+ncaaf:EKY,ncaaf,Eastern Kentucky,Eastern Kentucky,Colonels,EKY,ekent,EKY,observed
+ncaaf:ELON,ncaaf,Elon,Elon,Phoenix,ELON,elon,ELON,observed
+ncaaf:EMU,ncaaf,Eastern Michigan,Eastern Michigan,Eagles,EMU,emich,EMU,observed
+ncaaf:ETAM,ncaaf,East Texas A&M,East Texas A&M,Lions,ETAM,txamc,ETAMU,observed
+ncaaf:ETSU,ncaaf,East Tennessee State,East Tennessee State,Buccaneers,ETSU,etnst,East Tennessee St.|ETSU,observed
+ncaaf:EWU,ncaaf,Eastern Washington,Eastern Washington,Eagles,EWU,ewash,EWU,observed
+ncaaf:FAMU,ncaaf,Florida A&M,Florida A&M,Rattlers,FAMU,flam,FAMU,observed
+ncaaf:FAU,ncaaf,Florida Atlantic,Florida Atlantic,Owls,FAU,flatl,FAU,observed
+ncaaf:FIU,ncaaf,Florida International,Florida International,Panthers,FIU,flint,FIU,observed
+ncaaf:FLA,ncaaf,Florida,Florida,Gators,FLA,fl,FLA,observed
+ncaaf:FOR,ncaaf,Fordham,Fordham,Rams,FOR,fordm,FOR,observed
+ncaaf:FRES,ncaaf,Fresno State,Fresno State,Bulldogs,FRES,frest,Fresno St.|FRES,observed
+ncaaf:FSU,ncaaf,Florida State,Florida State,Seminoles,FSU,flst,Florida St.|FSU,observed
+ncaaf:FUR,ncaaf,Furman,Furman,Paladins,FUR,furman,FUR,observed
+ncaaf:GASO,ncaaf,Georgia Southern,Georgia Southern,Eagles,GASO,gas,GASO,observed
+ncaaf:GAST,ncaaf,Georgia State,Georgia State,Panthers,GAST,gast,Georgia St.|GSU,observed
+ncaaf:GRAM,ncaaf,Grambling State,Grambling State,Tigers,GRAM,grmbst,Grambling St.|GRAM,observed
+ncaaf:GT,ncaaf,Georgia Tech,Georgia Tech,Yellow Jackets,GT,gtech,GT,observed
+ncaaf:GTWN,ncaaf,Georgetown,Georgetown,Hoyas,GTWN,gtwn,GTWN,observed
+ncaaf:HAMP,ncaaf,Hampton,Hampton,Pirates,HAMP,hamp,HAMP,observed
+ncaaf:HARV,ncaaf,Harvard,Harvard,Crimson,HARV,harv,HARV,observed
+ncaaf:HAW,ncaaf,Hawai'i,Hawai'i,Rainbow Warriors,HAW,hawaii,HAW,observed
+ncaaf:HC,ncaaf,Holy Cross,Holy Cross,Crusaders,HC,holy,HC,observed
+ncaaf:HCU,ncaaf,Houston Christian,Houston Christian,Huskies,HCU,houbap,HCU,observed
+ncaaf:HOU,ncaaf,Houston,Houston,Cougars,HOU,hou,HOU,observed
+ncaaf:HOW,ncaaf,Howard,Howard,Bison,HOW,howrd,HOW,observed
+ncaaf:IDHO,ncaaf,U. of Idaho,U. of Idaho,Vandals,IDHO,idaho,Idaho|IDHO,observed
+ncaaf:IDST,ncaaf,Idaho State,Idaho State,Bengals,IDST,idhst,Idaho St.|IDST,observed
+ncaaf:ILL,ncaaf,Illinois,Illinois,Fighting Illini,ILL,ill,ILL,observed
+ncaaf:ILST,ncaaf,Illinois State,Illinois State,Redbirds,ILST,illst,Illinois St.|ILST,observed
+ncaaf:IND,ncaaf,Indiana,Indiana,Hoosiers,IND,ind,IND,observed
+ncaaf:INST,ncaaf,Indiana State,Indiana State,Sycamores,INST,indst,Indiana St.|INST,observed
+ncaaf:IOWA,ncaaf,Iowa,Iowa,Hawkeyes,IOWA,iowa,IOWA,observed
+ncaaf:ISU,ncaaf,Iowa State,Iowa State,Cyclones,ISU,iowast,Iowa St.|ISU,observed
+ncaaf:IW,ncaaf,Incarnate Word,Incarnate Word,Cardinals,IW,incar,IW,observed
+ncaaf:JKST,ncaaf,Jackson State,Jackson State,Tigers,JKST,jackst,Jackson St.|JKST,observed
+ncaaf:JMU,ncaaf,James Madison,James Madison,Dukes,JMU,jmad,JMU,observed
+ncaaf:JVST,ncaaf,Jacksonville State,Jacksonville State,Gamecocks,JVST,jaxst,Jacksonville St.|JVST,observed
+ncaaf:KENN,ncaaf,Kennesaw State,Kennesaw State,Owls,KENN,kenest,Kennesaw St.|KENN,observed
+ncaaf:KENT,ncaaf,Kent State,Kent State,Golden Flashes,KENT,kentst,Kent St.|KENT,observed
+ncaaf:KSU,ncaaf,Kansas State,Kansas State,Wildcats,KSU,kanst,Kansas St.|KSU,observed
+ncaaf:KU,ncaaf,Kansas,Kansas,Jayhawks,KU,kan,KU,observed
+ncaaf:LAF,ncaaf,Lafayette,Lafayette,Leopards,LAF,lafay,LAF,observed
+ncaaf:LAM,ncaaf,Lamar,Lamar,Cardinals,LAM,lamar,LAM,observed
+ncaaf:LEH,ncaaf,Lehigh,Lehigh,Mountain Hawks,LEH,lehi,LEH,observed
+ncaaf:LIB,ncaaf,Liberty,Liberty,Flames,LIB,librty,LIB,observed
+ncaaf:LINW,ncaaf,Lindenwood,Lindenwood,Lions,LINW,jac,LIN,observed
+ncaaf:LIU,ncaaf,LIU,LIU,Sharks,LIU,liub,,observed
+ncaaf:LOU,ncaaf,Louisville,Louisville,Cardinals,LOU,lou,LOU,observed
+ncaaf:LSU,ncaaf,LSU,LSU,Tigers,LSU,lsu,,observed
+ncaaf:LT,ncaaf,Louisiana Tech,Louisiana Tech,Bulldogs,LT,loutch,LT,observed
+ncaaf:MASS,ncaaf,UMass,UMass,Minutemen,MASS,umass,UMASS,observed
+ncaaf:MCNS,ncaaf,McNeese,McNeese,Cowboys,MCNS,mcnst,MCNS,observed
+ncaaf:MD,ncaaf,Maryland,Maryland,Terrapins,MD,mary,UMD,observed
+ncaaf:ME,ncaaf,Maine,Maine,Black Bears,ME,maine,MAINE,observed
+ncaaf:MEM,ncaaf,Memphis,Memphis,Tigers,MEM,mphs,MEM,observed
+ncaaf:MER,ncaaf,Mercer,Mercer,Bears,MER,merc,MER,observed
+ncaaf:MHU,ncaaf,Mercyhurst,Mercyhurst,Lakers,MHU,mrcy,MRCY,observed
+ncaaf:MIA,ncaaf,Miami (FL),Miami (FL),Hurricanes,MIA,mia,MIA,observed
+ncaaf:MICH,ncaaf,Michigan,Michigan,Wolverines,MICH,mich,MICH,observed
+ncaaf:MINN,ncaaf,Minnesota,Minnesota,Golden Gophers,MINN,minnst,MINN,observed
+ncaaf:MISS,ncaaf,Ole Miss,Ole Miss,Rebels,MISS,miss,MISS,observed
+ncaaf:MIZZ,ncaaf,Missouri,Missouri,Tigers,MIZZ,missr,MIZZ,observed
+ncaaf:MOH,ncaaf,Miami (OH),Miami (OH),RedHawks,MOH,miaoh,M-OH,observed
+ncaaf:MONM,ncaaf,Monmouth,Monmouth,Hawks,MONM,monm,MONM,observed
+ncaaf:MONT,ncaaf,Montana,Montana,Grizzlies,MONT,mont,MONT,observed
+ncaaf:MORE,ncaaf,Morehead State,Morehead State,Eagles,MORE,more,Morehead St.|MORE,observed
+ncaaf:MORG,ncaaf,Morgan State,Morgan State,Bears,MORG,morgst,Morgan St.|MORG,observed
+ncaaf:MOSU,ncaaf,Missouri State,Missouri State,Bears,MOSU,msrst,Missouri St.|MOST,observed
+ncaaf:MRMK,ncaaf,Merrimack,Merrimack,Warriors,MRMK,merri,MERR,observed
+ncaaf:MRSH,ncaaf,Marshall,Marshall,Thundering Herd,MRSH,marsh,MRSH,observed
+ncaaf:MRST,ncaaf,Marist,Marist,Red Foxes,MRST,mrst,MRST,observed
+ncaaf:MSST,ncaaf,Mississippi State,Mississippi State,Bulldogs,MSST,mspst,Mississippi St.|MSST,observed
+ncaaf:MSU,ncaaf,Michigan State,Michigan State,Spartans,MSU,mst,Michigan St.|MSU,observed
+ncaaf:MTST,ncaaf,Mont. State,Mont. State,Bobcats,MTST,monst,Montana St.|MTST,observed
+ncaaf:MTU,ncaaf,Middle Tennessee,Middle Tennessee,Blue Raiders,MTU,mtnst,MTSU,observed
+ncaaf:MURR,ncaaf,Murray State,Murray State,Racers,MURR,murst,Murray St.|MURR,observed
+ncaaf:MVSU,ncaaf,Mississippi Valley State,Mississippi Valley State,Delta Devils,MVSU,msvlst,Mississippi Valley St.|MVSU,observed
+ncaaf:NAU,ncaaf,Northern Arizona,Northern Arizona,Lumberjacks,NAU,narz,NAU,observed
+ncaaf:NCAT,ncaaf,North Carolina A&T,North Carolina A&T,Aggies,NCAT,ncat,NCAT,observed
+ncaaf:NCCU,ncaaf,North Carolina Central,North Carolina Central,Eagles,NCCU,ncc,NCC,observed
+ncaaf:NCST,ncaaf,NC State,NC State,Wolfpack,NCST,ncst,NC St.|NCSU,observed
+ncaaf:ND,ncaaf,Notre Dame,Notre Dame,Fighting Irish,ND,nd,ND,observed
+ncaaf:NDSU,ncaaf,North Dakota State,North Dakota State,Bison,NDSU,ndkst,North Dakota St.|NDSU,observed
+ncaaf:NEB,ncaaf,Nebraska,Nebraska,Cornhuskers,NEB,nebr,NEB,observed
+ncaaf:NEV,ncaaf,Nevada,Nevada,Wolf Pack,NEV,nevada,NEV,observed
+ncaaf:NHC,ncaaf,New Haven,New Haven,Chargers,NHC,nhc,NHC,observed
+ncaaf:NICH,ncaaf,Nicholls,Nicholls,Colonels,NICH,nichls,Nicholls St.|NICH,observed
+ncaaf:NIU,ncaaf,Northern Illinois,Northern Illinois,Huskies,NIU,nill,NIU,observed
+ncaaf:NMSU,ncaaf,NM State,NM State,Aggies,NMSU,nmxst,New Mexico St.|NMSU,observed
+ncaaf:NORF,ncaaf,Norfolk State,Norfolk State,Spartans,NORF,norfst,Norfolk St.|NORF,observed
+ncaaf:NW,ncaaf,Northwestern,Northwestern,Wildcats,NW,nw,NW,observed
+ncaaf:NWST,ncaaf,Northwestern State,Northwestern State,Demons,NWST,nwst,Northwestern St.|NWST,observed
+ncaaf:OHIO,ncaaf,Ohio,Ohio,Bobcats,OHIO,ohio,OHIO,observed
+ncaaf:OKLA,ncaaf,Oklahoma,Oklahoma,Sooners,OKLA,okl,OKLA,observed
+ncaaf:OKST,ncaaf,Oklahoma State,Oklahoma State,Cowboys,OKST,okst,Oklahoma St.|OKST,observed
+ncaaf:ORE,ncaaf,Oregon,Oregon,Ducks,ORE,ore,ORE,observed
+ncaaf:ORST,ncaaf,Oregon State,Oregon State,Beavers,ORST,oregst,Oregon St.|ORST,observed
+ncaaf:OSU,ncaaf,Ohio State,Ohio State,Buckeyes,OSU,ohiost,Ohio St.|OSU,observed
+ncaaf:PEAY,ncaaf,Austin Peay,Austin Peay,Governors,PEAY,ausp,PEAY,observed
+ncaaf:PENN,ncaaf,Penn,Penn,Quakers,PENN,penn,PENN,observed
+ncaaf:PITT,ncaaf,Pittsburgh,Pittsburgh,Panthers,PITT,pitt,PITT,observed
+ncaaf:PRE,ncaaf,Presbyterian,Presbyterian,Blue Hose,PRE,presb,PRE,observed
+ncaaf:PRIN,ncaaf,Princeton,Princeton,Tigers,PRIN,prnce,PRIN,observed
+ncaaf:PRST,ncaaf,Portland State,Portland State,Vikings,PRST,portst,Portland St.|PRST,observed
+ncaaf:PSU,ncaaf,Penn State,Penn State,Nittany Lions,PSU,pennst,Penn St.|PSU,observed
+ncaaf:PUR,ncaaf,Purdue,Purdue,Boilermakers,PUR,pur,PUR,observed
+ncaaf:PV,ncaaf,Prairie View A&M,Prairie View A&M,Panthers,PV,pvam,PV,observed
+ncaaf:RICE,ncaaf,Rice,Rice,Owls,RICE,rice,RICE,observed
+ncaaf:RICH,ncaaf,Richmond,Richmond,Spiders,RICH,rich,RICH,observed
+ncaaf:RMU,ncaaf,Robert Morris,Robert Morris,Colonials,RMU,robms,RMU,observed
+ncaaf:RUTG,ncaaf,Rutgers,Rutgers,Scarlet Knights,RUTG,rutger,RUTG,observed
+ncaaf:SAC,ncaaf,Sacramento State,Sacramento State,Hornets,SAC,sacst,Sacramento St.|SAC,observed
+ncaaf:SAM,ncaaf,Samford,Samford,Bulldogs,SAM,samf,SAM,observed
+ncaaf:SCAR,ncaaf,South Carolina,South Carolina,Gamecocks,SCAR,sc,SCAR,observed
+ncaaf:SCST,ncaaf,South Carolina State,South Carolina State,Bulldogs,SCST,scarst,South Carolina St.|SCST,observed
+ncaaf:SDAK,ncaaf,South Dakota,South Dakota,Coyotes,SDAK,sdak,SDAK,observed
+ncaaf:SDST,ncaaf,South Dakota State,South Dakota State,Jackrabbits,SDST,sdkst,South Dakota St.|SDKSU,observed
+ncaaf:SDSU,ncaaf,San Diego State,San Diego State,Aztecs,SDSU,sdst,San Diego St.|SDSU,observed
+ncaaf:SELA,ncaaf,Southeastern Louisiana,Southeastern Louisiana,Lions,SELA,selou,SELA,observed
+ncaaf:SEMO,ncaaf,Southeast Missouri State,Southeast Missouri State,Redhawks,SEMO,semst,Southeast Missouri St.|SEMO,observed
+ncaaf:SFA,ncaaf,Stephen F. Austin,Stephen F. Austin,Lumberjacks,SFA,sfaus,SFA,observed
+ncaaf:SHSU,ncaaf,Sam Houston,Sam Houston,Bearkats,SHSU,smho,SMHO,observed
+ncaaf:SHU,ncaaf,Sacred Heart,Sacred Heart,Pioneers,SHU,sacred,SHU,observed
+ncaaf:SIU,ncaaf,Southern Illinois,Southern Illinois,Salukis,SIU,sill,SIU,observed
+ncaaf:SJSU,ncaaf,San Jose State,San Jose State,Spartans,SJSU,sjst,San Jose St.|SJSU,observed
+ncaaf:SMU,ncaaf,SMU,SMU,Mustangs,SMU,smu,,observed
+ncaaf:SOU,ncaaf,Southern,Southern,Jaguars,SOU,south,Southern University|SOU,observed
+ncaaf:STAN,ncaaf,Stanford,Stanford,Cardinal,STAN,stan,STAN,observed
+ncaaf:STET,ncaaf,Stetson,Stetson,Hatters,STET,stet,STET,observed
+ncaaf:STNH,ncaaf,Stonehill,Stonehill,Skyhawks,STNH,stnh,STNH,observed
+ncaaf:STON,ncaaf,Stony Brook,Stony Brook,Seawolves,STON,stbr,STON,observed
+ncaaf:SUU,ncaaf,Southern Utah,Southern Utah,Thunderbirds,SUU,sutah,SUU,observed
+ncaaf:SYR,ncaaf,Syracuse,Syracuse,Orange,SYR,syra,SYR,observed
+ncaaf:TARL,ncaaf,Tarleton State,Tarleton State,Texans,TARL,tarl,Tarleton St.|TAR,observed
+ncaaf:TCU,ncaaf,TCU,TCU,Horned Frogs,TCU,tcu,,observed
+ncaaf:TEM,ncaaf,Temple,Temple,Owls,TEM,templ,TEM,observed
+ncaaf:TENN,ncaaf,Tennessee,Tennessee,Volunteers,TENN,tenn,TENN,observed
+ncaaf:TEX,ncaaf,Texas,Texas,Longhorns,TEX,tx,TEX,observed
+ncaaf:TLSA,ncaaf,Tulsa,Tulsa,Golden Hurricane,TLSA,tulsa,TLSA,observed
+ncaaf:TNST,ncaaf,Tennessee State,Tennessee State,Tigers,TNST,tenst,Tennessee St.|TNST,observed
+ncaaf:TNTC,ncaaf,Tennessee Tech,Tennessee Tech,Golden Eagles,TNTC,tentch,TNTC,observed
+ncaaf:TOL,ncaaf,Toledo,Toledo,Rockets,TOL,toledo,TOL,observed
+ncaaf:TOWS,ncaaf,Towson,Towson,Tigers,TOWS,tows,TOWS,observed
+ncaaf:TROY,ncaaf,Troy,Troy,Trojans,TROY,troy,TROY,observed
+ncaaf:TTU,ncaaf,Texas Tech,Texas Tech,Red Raiders,TTU,txtech,TTU,observed
+ncaaf:TULN,ncaaf,Tulane,Tulane,Green Wave,TULN,tulane,TULN,observed
+ncaaf:TXAM,ncaaf,Texas A&M,Texas A&M,Aggies,TXAM,txam,A&M,observed
+ncaaf:TXSO,ncaaf,Texas Southern,Texas Southern,Tigers,TXSO,txs,TXSO,observed
+ncaaf:TXST,ncaaf,Texas State,Texas State,Bobcats,TXST,txst,Texas St.|TXST,observed
+ncaaf:UAB,ncaaf,UAB,UAB,Blazers,UAB,uab,,observed
+ncaaf:UCD,ncaaf,UC Davis,UC Davis,Aggies,UCD,ucdv,UCD,observed
+ncaaf:UCF,ncaaf,UCF,UCF,Knights,UCF,ucf,,observed
+ncaaf:UCLA,ncaaf,UCLA,UCLA,Bruins,UCLA,ucla,,observed
+ncaaf:UGA,ncaaf,Georgia,Georgia,Bulldogs,UGA,ga,UGA,observed
+ncaaf:UK,ncaaf,Kentucky,Kentucky,Wildcats,UK,uk,UK,observed
+ncaaf:ULL,ncaaf,Louisiana,Louisiana,Ragin' Cajuns,ULL,loulaf,ULL,observed
+ncaaf:ULM,ncaaf,ULM,ULM,Warhawks,ULM,lamon,Louisiana-Monroe,observed
+ncaaf:UNA,ncaaf,North Alabama,North Alabama,Lions,UNA,nal,UNA,observed
+ncaaf:UNC,ncaaf,North Carolina,North Carolina,Tar Heels,UNC,ncar,UNC,observed
+ncaaf:UNCO,ncaaf,Northern Colorado,Northern Colorado,Bears,UNCO,ncol,UNCO,observed
+ncaaf:UNH,ncaaf,New Hampshire,New Hampshire,Wildcats,UNH,nhamp,UNH,observed
+ncaaf:UNI,ncaaf,Northern Iowa,Northern Iowa,Panthers,UNI,niowa,UNI,observed
+ncaaf:UNLV,ncaaf,UNLV,UNLV,Runnin' Rebels,UNLV,unlv,,observed
+ncaaf:UNM,ncaaf,New Mexico,New Mexico,Lobos,UNM,nmx,UNM,observed
+ncaaf:UNT,ncaaf,North Texas,North Texas,Mean Green,UNT,ntx,UNT,observed
+ncaaf:URI,ncaaf,Rhode Island,Rhode Island,Rams,URI,ri,URI,observed
+ncaaf:USA,ncaaf,South Alabama,South Alabama,Jaguars,USA,sala,USA,observed
+ncaaf:USC,ncaaf,USC,USC,Trojans,USC,usc,,observed
+ncaaf:USF,ncaaf,South Florida,South Florida,Bulls,USF,sfl,USF,observed
+ncaaf:USM,ncaaf,Southern Miss,Southern Miss,Golden Eagles,USM,soumis,USM,observed
+ncaaf:UST,ncaaf,St. Thomas (MN),St. Thomas (MN),Tommies,UST,stmn,St. Thomas|TOM,observed
+ncaaf:USU,ncaaf,Utah State,Utah State,Aggies,USU,utahst,Utah St.|USU,observed
+ncaaf:UTAH,ncaaf,Utah,Utah,Utes,UTAH,utah,UTAH,observed
+ncaaf:UTEP,ncaaf,UTEP,UTEP,Miners,UTEP,utep,,observed
+ncaaf:UTM,ncaaf,UT Martin,UT Martin,Skyhawks,UTM,tmrt,Tennessee-Martin|UTM,observed
+ncaaf:UTRGV,ncaaf,UT Rio Grande Valley,UT Rio Grande Valley,Vaqueros,UTRGV,utrgv,UTRGV,observed
+ncaaf:UTSA,ncaaf,UTSA,UTSA,Roadrunners,UTSA,utsa,,observed
+ncaaf:UTU,ncaaf,Utah Tech,Utah Tech,Trailblazers,UTU,dxst,UT,observed
+ncaaf:UVA,ncaaf,Virginia,Virginia,Cavaliers,UVA,vir,UVA,observed
+ncaaf:UWFL,ncaaf,West Florida,West Florida,Argonauts,UWFL,uwfl,UWFL,observed
+ncaaf:UWGA,ncaaf,West Georgia,West Georgia,Wolves,UWGA,uwg,UWG,observed
+ncaaf:VALP,ncaaf,Valparaiso,Valparaiso,Beacons,VALP,valp,VALP,observed
+ncaaf:VAN,ncaaf,Vanderbilt,Vanderbilt,Commodores,VAN,vand,VAN,observed
+ncaaf:VILL,ncaaf,Villanova,Villanova,Wildcats,VILL,vill,NOVA,observed
+ncaaf:VMI,ncaaf,VMI,VMI,Keydets,VMI,vamil,,observed
+ncaaf:VT,ncaaf,Virginia Tech,Virginia Tech,Hokies,VT,vtech,VT,observed
+ncaaf:WAG,ncaaf,Wagner,Wagner,Seahawks,WAG,wag,WAG,observed
+ncaaf:WAKE,ncaaf,Wake Forest,Wake Forest,Demon Deacons,WAKE,wake,WAKE,observed
+ncaaf:WASH,ncaaf,Washington,Washington,Huskies,WASH,wash,WASH,observed
+ncaaf:WCU,ncaaf,Western Carolina,Western Carolina,Catamounts,WCU,wcar,WCU,observed
+ncaaf:WEB,ncaaf,Weber State,Weber State,Wildcats,WEB,webst,Weber St.|WEB,observed
+ncaaf:WEBB,ncaaf,Gardner-Webb,Gardner-Webb,Runnin' Bulldogs,WEBB,gardwb,WEBB,observed
+ncaaf:WIS,ncaaf,Wisconsin,Wisconsin,Badgers,WIS,wisc,WIS,observed
+ncaaf:WIU,ncaaf,Western Illinois,Western Illinois,Leathernecks,WIU,will,WIU,observed
+ncaaf:WKU,ncaaf,Western Kentucky,Western Kentucky,Hilltoppers,WKU,wkent,WKU,observed
+ncaaf:WM,ncaaf,William & Mary,William & Mary,Tribe,WM,wm,W&M,observed
+ncaaf:WMU,ncaaf,Western Michigan,Western Michigan,Broncos,WMU,wmich,WMU,observed
+ncaaf:WOF,ncaaf,Wofford,Wofford,Terriers,WOF,woff,WOF,observed
+ncaaf:WSU,ncaaf,Washington State,Washington State,Cougars,WSU,washst,Washington St.|WSU,observed
+ncaaf:WVU,ncaaf,West Virginia,West Virginia,Mountaineers,WVU,wvir,WVU,observed
+ncaaf:WYO,ncaaf,Wyoming,Wyoming,Cowboys,WYO,wyom,WYO,observed
+ncaaf:YALE,ncaaf,Yale,Yale,Bulldogs,YALE,yale,YALE,observed
+ncaaf:YSU,ncaaf,Youngstown State,Youngstown State,Penguins,YSU,yngst,Youngstown St.|YSU,observed
+ncaaf:CHS,ncaaf,Chicago State,Chicago State,Cougars,,chs,CHS,observed
+ncaaf:VLB,ncaaf,Virginia-Lynchburg,Virginia-Lynchburg,Dragons,,vlb,VLB,observed
