@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from pmarb.events import FRESH, GAP_KINDS, HEALTH, VENUES, gap_bucket, is_error_event
 from pmarb.fees import KalshiFeeModel, PolymarketUSFeeModel
 from pmarb.models import Side
 
@@ -38,7 +39,6 @@ from pmarb.models import Level
 ZERO = Decimal(0)
 ONE = Decimal(1)
 _SKEW_BUCKETS = ((0, 100), (100, 250), (250, 500), (500, 1000))
-_GAP_KINDS = ("maintenance", "clock_jump", "data_gap", "backpressure", "restart")
 
 
 def _decimal(value: Any) -> Decimal | None:
@@ -271,6 +271,35 @@ def _scenario_fees(row: dict[str, Any]) -> tuple[dict[str, Decimal] | None, str 
         return None, "invalid persisted walked-level provenance"
 
 
+def _event_detail(event: dict[str, Any]) -> dict[str, Any]:
+    raw = event.get("detail_json")
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str) or raw == "":
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _health_samples(
+    event: dict[str, Any], detail: dict[str, Any]
+) -> list[tuple[str, dict[str, Any]]]:
+    """One sample per venue. Combined health rows carry a ``venues`` object."""
+    venues = detail.get(VENUES)
+    if isinstance(venues, dict):
+        samples = [
+            (str(name), state)
+            for name, state in venues.items()
+            if isinstance(state, dict) and FRESH in state
+        ]
+        if samples:
+            return samples
+    return [(str(event.get("venue") or "all"), detail)]
+
+
 def build_metrics(
     conn: sqlite3.Connection,
     since: str | datetime | None = None,
@@ -307,7 +336,7 @@ def build_metrics(
         for col in ("peak_net", "min_size", "max_size", "qty"):
             row[col] = _decimal(row.get(col))
 
-    timestamps = [r["utc"] for r in events if r.get("kind") == "health"]
+    timestamps = [r["utc"] for r in events if r.get("kind") == HEALTH]
     start = _bound(min(timestamps, key=_parse_time)) if timestamps else None
     end = _bound(max(timestamps, key=_parse_time)) if timestamps else None
     duration_seconds: Decimal | None = None
@@ -315,62 +344,36 @@ def build_metrics(
         duration_seconds = _seconds(_parse_time(end), _parse_time(start))
 
     def gap_kind(event: dict[str, Any]) -> str | None:
-        if event.get("kind") in _GAP_KINDS:
-            return event["kind"]
-        if event.get("kind") != "gap":
-            return None
-        try:
-            detail = json.loads(event.get("detail_json") or "{}")
-        except json.JSONDecodeError:
-            detail = {}
-        kind = detail.get("kind", detail.get("reason")) if isinstance(detail, dict) else None
-        aliases = {"collector_restart": "restart", "backpressure": "backpressure"}
-        kind = aliases.get(kind, kind)
-        return kind if kind in _GAP_KINDS else None
+        return gap_bucket(event.get("kind"), _event_detail(event))
 
-    gaps = {kind: sum(1 for e in events if gap_kind(e) == kind) for kind in _GAP_KINDS}
+    gaps = {kind: sum(1 for event in events if gap_kind(event) == kind) for kind in GAP_KINDS}
     health_by_venue: dict[str, list[dict[str, Any]]] = {}
     http429 = errors = 0
     for event in events:
-        venue = event.get("venue") or "all"
-        if event.get("kind") == "health":
-            health_by_venue.setdefault(venue, []).append(event)
-        detail = event.get("detail_json") or ""
-        try:
-            detail_obj = json.loads(detail) if isinstance(detail, str) else detail
-        except (TypeError, json.JSONDecodeError):
-            detail_obj = {}
-        code = (
-            detail_obj.get("status_code", detail_obj.get("status"))
-            if isinstance(detail_obj, dict)
-            else None
-        )
+        detail_obj = _event_detail(event)
+        if event.get("kind") == HEALTH:
+            for venue, state in _health_samples(event, detail_obj):
+                health_by_venue.setdefault(venue, []).append({"utc": event["utc"], "_state": state})
+        code = detail_obj.get("status_code", detail_obj.get("status"))
         if str(code) == "429":
             http429 += 1
-        if event.get("kind") == "error":
+        if is_error_event(event.get("kind")):
             errors += 1
     venues = {}
     for venue, rows in health_by_venue.items():
         fresh = 0
         for event in rows:
-            try:
-                details = json.loads(event.get("detail_json") or "{}")
-            except json.JSONDecodeError:
-                details = {}
-            if isinstance(details, dict) and details.get("fresh") is True:
+            if event["_state"].get(FRESH) is True:
                 fresh += 1
         fresh_seconds = known_seconds = ZERO
         if start and end:
-            ordered = sorted(rows, key=lambda e: _parse_time(e["utc"]))
+            ordered = sorted(rows, key=lambda item: _parse_time(item["utc"]))
             for index, event in enumerate(ordered[:-1]):
                 t0 = max(_parse_time(event["utc"]), _parse_time(start))
                 t1 = min(_parse_time(ordered[index + 1]["utc"]), _parse_time(end))
                 if t1 <= t0:
                     continue
-                try:
-                    state = json.loads(event.get("detail_json") or "{}").get("fresh")
-                except (AttributeError, json.JSONDecodeError):
-                    state = None
+                state = event["_state"].get(FRESH)
                 span = _seconds(t1, t0)
                 if isinstance(state, bool):
                     known_seconds += span

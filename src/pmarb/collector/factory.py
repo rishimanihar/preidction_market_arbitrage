@@ -22,6 +22,7 @@ from pmarb.collector.review_mode import ReviewMode
 from pmarb.collector.runtime import Collector
 from pmarb.collector.stopfile import stop_request_path
 from pmarb.config import Settings
+from pmarb.events import COLLECTOR_RESTART
 from pmarb.http import ObservationHttpClient
 from pmarb.protocols import VenueAdapter
 from pmarb.storage.db import DbWriterTask, open_writer
@@ -164,4 +165,4 @@ def _startup(
     collector = holder[0]
     collector.set_universe(tuple(registry.groups.values()), tuple(registry.markets.values()))
     if closed:
-        collector.record_event(None, "collector_restart", {"closed_episodes": closed})
+        collector.record_event(None, COLLECTOR_RESTART, {"closed_episodes": closed})

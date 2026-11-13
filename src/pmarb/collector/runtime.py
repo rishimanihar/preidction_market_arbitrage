@@ -62,6 +62,20 @@ from pmarb.collector.freshness import (
 from pmarb.collector.scheduler import PollPlan, ScheduledGroup, build_poll_plan, market_ids
 from pmarb.collector.supervisor import RestartBackoff, supervise
 from pmarb.config import Settings
+from pmarb.events import (
+    ADAPTER_ERROR,
+    ADAPTER_RECOVERED,
+    COLLECTOR_SHUTDOWN,
+    FRESH,
+    HEALTH,
+    LOOP_CRASH,
+    RECORDING_BACKPRESSURE,
+    STOP_REQUEST_STALE,
+    STOP_REQUESTED,
+    TIMING,
+    VALID,
+    VENUES,
+)
 from pmarb.http import Backoff, Deadline, failure_cause, failure_detail, request_deadline
 from pmarb.models import Book, EquivalenceGroup, GroupStatus, Market, Venue
 from pmarb.osutil import is_windows
@@ -87,15 +101,9 @@ FETCH_BACKSTOP_GRACE_S = 0.25
 # A repeated failure with the same cause is logged at WARNING once per this
 # many polls (every poll is still a collector event).
 ERROR_LOG_REPEAT_EVERY = 10
+# How long shutdown waits for a writer to drain. A stuck fsync must not hang stop.
+DRAIN_TIMEOUT_S = 30.0
 
-RECORDING_BACKPRESSURE = "recording_backpressure"
-ADAPTER_ERROR = "adapter_error"
-ADAPTER_RECOVERED = "adapter_recovered"
-COLLECTOR_SHUTDOWN = "collector_shutdown"
-LOOP_CRASH = "loop_crash"
-HEALTH = "health"
-STOP_REQUESTED = "stop_requested"
-STOP_REQUEST_STALE = "stop_request_stale"
 STOP_REQUEST_INTERVAL_S = 1.0
 # A request written this soon before the collector was created still counts.
 # It covers coarse file timestamps (FAT keeps 2 s) and `pmarb stop` racing a start.
@@ -200,9 +208,12 @@ class Collector:
         on_stopped: StartupHook | None = None,
         stop_file: Path | None = None,
         stop_poll_interval_s: float = STOP_REQUEST_INTERVAL_S,
+        drain_timeout_s: float = DRAIN_TIMEOUT_S,
     ) -> None:
         if stop_poll_interval_s <= 0:
             raise ValueError("stop_poll_interval_s must be > 0")
+        if drain_timeout_s <= 0:
+            raise ValueError("drain_timeout_s must be > 0")
         if queue_limit < 0:
             raise ValueError("queue_limit must be >= 0")
         if raw_task is not None:
@@ -246,6 +257,7 @@ class Collector:
         self._on_stopped = on_stopped
         self._stop_file = stop_file
         self._stop_poll_interval_s = stop_poll_interval_s
+        self._drain_timeout_s = drain_timeout_s
         # Real wall time, because file mtimes are real. A request older than
         # this collector was left behind by an earlier run and is stale.
         self._created_epoch = time.time()
@@ -398,9 +410,9 @@ class Collector:
                     self._emit(None, COLLECTOR_SHUTDOWN, {})
             finally:
                 try:
-                    await self._cancel_and_wait([self._raw_handle] if self._raw_handle else [])
+                    await self._cancel_bounded([self._raw_handle] if self._raw_handle else [])
                     self._emit_writer_timings()
-                    await self._cancel_and_wait([self._db_handle] if self._db_handle else [])
+                    await self._cancel_bounded([self._db_handle] if self._db_handle else [])
                 finally:
                     try:
                         if self._on_stopped is not None:
@@ -984,10 +996,13 @@ class Collector:
             self._emit(None, HEALTH, self._health_detail(alarm="disk_recovered"))
 
     def _health_detail(self, *, alarm: str | None) -> dict[str, Any]:
+        now_mono = self._clock.monotonic()
+        now_wall = self._clock.wall()
         return {
             "queue_depth_raw": _depth(self._raw_queue),
             "queue_depth_db": _depth(self._db_queue),
-            "last_book_age_s": self._last_book_age(self._clock.wall()),
+            "last_book_age_s": self._last_book_age(now_wall),
+            VENUES: self._venue_health(now_mono, now_wall),
             "error_count": self.error_count,
             "http_429_count": self.http_429_count,
             "poll_failures_by_cause": {
@@ -1031,6 +1046,40 @@ class Collector:
             ages[str(venue)] = None if seen is None else (now_wall - seen).total_seconds()
         return ages
 
+    def _venue_health(self, now_mono: float, now_wall: datetime) -> dict[str, dict[str, Any]]:
+        """Per-venue fresh/valid flags the report reads from health rows.
+
+        ``fresh`` and ``valid`` are booleans when the venue has at least one
+        stored book, and ``None`` when it has none (the report treats that as
+        unknown). A venue is fresh only when every one of its books is fresh.
+        """
+        grouped: dict[str, list[BookState]] = {
+            str(venue): [] for venue in (Venue.KALSHI, Venue.POLYMARKET_US)
+        }
+        for state in self.store.items():
+            grouped.setdefault(str(state.book.venue), []).append(state)
+        ages = self._last_book_age(now_wall)
+        out: dict[str, dict[str, Any]] = {}
+        for venue, states in grouped.items():
+            fresh_n = 0
+            valid_n = 0
+            for state in states:
+                if state.invalid_reason is None and state.book.valid:
+                    valid_n += 1
+                fresh, _reason = is_fresh(state, now_mono, now_wall, self._max_age(state))
+                if fresh:
+                    fresh_n += 1
+            count = len(states)
+            out[venue] = {
+                "books": count,
+                "fresh_books": fresh_n,
+                "valid_books": valid_n,
+                FRESH: None if count == 0 else fresh_n == count,
+                VALID: None if count == 0 else valid_n == count,
+                "last_book_age_s": ages.get(venue),
+            }
+        return out
+
     def _enqueue_raw(self, env: Envelope) -> None:
         if self._raw_queue is None or not self._raw_logging or self._backpressure:
             return
@@ -1053,7 +1102,7 @@ class Collector:
             return
 
     def _timing(self, phase: str, duration_s: float, **detail: Any) -> None:
-        self._emit(None, "timing", {"phase": phase, "duration_s": duration_s, **detail})
+        self._emit(None, TIMING, {"phase": phase, "duration_s": duration_s, **detail})
 
     def _emit_writer_timings(self) -> None:
         raw_writer = getattr(self._raw_task, "writer", None)
@@ -1134,6 +1183,21 @@ class Collector:
 
     def _writer_tasks(self) -> list[asyncio.Task[None]]:
         return [task for task in (self._raw_handle, self._db_handle) if task is not None]
+
+    async def _cancel_bounded(self, tasks: list[asyncio.Task[None]]) -> None:
+        """Cancel writer tasks and give up after the drain timeout.
+
+        ``asyncio.wait`` alone never returns when a flush or ``to_thread`` call
+        ignores cancellation. Shutdown logs the timeout and continues so
+        ``stop`` itself stays bounded.
+        """
+        if not tasks:
+            return
+        try:
+            await asyncio.wait_for(self._cancel_and_wait(tasks), timeout=self._drain_timeout_s)
+        except TimeoutError:
+            names = ", ".join(task.get_name() for task in tasks)
+            _log.error("shutdown drain exceeded %.1fs (%s)", self._drain_timeout_s, names)
 
     async def _cancel_and_wait(self, tasks: list[asyncio.Task[None]]) -> None:
         live = [task for task in tasks if not task.done()]
