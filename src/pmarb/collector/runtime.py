@@ -239,13 +239,14 @@ class Collector:
         # `queue_limit` remains an explicit small-test/legacy override. In normal
         # operation discovery bursts are allowed to accumulate well past 1,000.
         self._queue_limit = queue_limit
-        self._low_water = (
-            backpressure_low_water
-            if backpressure_low_water is not None
-            else min(DEFAULT_BACKPRESSURE_LOW_WATER, self._queue_limit // 2)
-        )
-        if self._low_water < 0 or self._low_water >= self._queue_limit:
-            raise ValueError("backpressure_low_water must be >= 0 and below high water")
+        if backpressure_low_water is None:
+            # Half the high water, and never above the default low water.
+            # A zero limit has no band below it; that default must not raise.
+            self._low_water = min(DEFAULT_BACKPRESSURE_LOW_WATER, self._queue_limit // 2)
+        else:
+            self._low_water = backpressure_low_water
+            if self._low_water < 0 or self._low_water >= self._queue_limit:
+                raise ValueError("backpressure_low_water must be >= 0 and below high water")
         if backpressure_sustained_s < 0:
             raise ValueError("backpressure_sustained_s must be >= 0")
         self._backpressure_sustained_s = backpressure_sustained_s
@@ -934,11 +935,14 @@ class Collector:
             self._backpressure_since = None
             return
         now = self._clock.monotonic()
-        if self._backpressure_since is None:
-            self._backpressure_since = now
-            return
-        if now - self._backpressure_since <= self._backpressure_sustained_s:
-            return
+        # A zero high water leaves no low-water band, so the overflow is
+        # already sustained. A positive high water still waits the window.
+        if self._low_water < self._queue_limit:
+            if self._backpressure_since is None:
+                self._backpressure_since = now
+                return
+            if now - self._backpressure_since <= self._backpressure_sustained_s:
+                return
         self._backpressure = True
         self.store.invalidate(None, RECORDING_BACKPRESSURE)
         self._emit(

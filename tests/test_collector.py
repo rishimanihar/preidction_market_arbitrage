@@ -834,6 +834,50 @@ async def test_http_429_is_counted() -> None:
         assert kalshi_state is not None and kalshi_state.invalid_reason is None
 
 
+def test_low_water_defaults_to_half_the_high_water() -> None:
+    clock = FakeClock(wall=T0)
+    collector, _gaps, _updates = build(
+        clock,
+        FakeVenue(Venue.KALSHI, []),
+        FakeVenue(Venue.POLYMARKET_US, []),
+        queue_limit=10,
+    )
+    assert collector._low_water == 5
+    explicit, _gaps, _updates = build(
+        clock,
+        FakeVenue(Venue.KALSHI, []),
+        FakeVenue(Venue.POLYMARKET_US, []),
+        queue_limit=10,
+        backpressure_low_water=3,
+    )
+    assert explicit._low_water == 3
+    for bad in (-1, 10):
+        with pytest.raises(ValueError, match="below high water"):
+            build(
+                clock,
+                FakeVenue(Venue.KALSHI, []),
+                FakeVenue(Venue.POLYMARKET_US, []),
+                queue_limit=10,
+                backpressure_low_water=bad,
+            )
+
+
+async def test_zero_queue_limit_records_backpressure_immediately() -> None:
+    clock = FakeClock(mono=1000, wall=T0)
+    queue: asyncio.Queue[object] = asyncio.Queue()
+    queue.put_nowait(object())
+    collector, _gaps, _updates = build(
+        clock,
+        FakeVenue(Venue.KALSHI, []),
+        FakeVenue(Venue.POLYMARKET_US, []),
+        raw_queue=queue,
+        queue_limit=0,
+    )
+    assert collector._low_water == 0
+    await collector._sync_backpressure()
+    assert any(event.kind == "recording_backpressure" for event in collector.events)
+
+
 async def test_backpressure_invalidates_and_slows_until_drained() -> None:
     clock = FakeClock(wall=T0)
     log: list[tuple[str, str]] = []
