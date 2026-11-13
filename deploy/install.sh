@@ -94,7 +94,11 @@ if [ "$DRY_RUN" -eq 1 ]; then
     "$PLATFORM" "$SERVICE_FILE" "$REPO" "$DATA_DIR" "$LOG_DIR" "$ENV_FILE"
   printf 'Would create mode-700 config/data/log directories and mode-600 env/service files.\n'
   printf 'Would run: PMARB_DATA_DIR=%s PMARB_ENV_FILE=%s %s doctor\n' "$DATA_DIR" "$ENV_FILE" "$PMARB_BIN"
-  printf 'Would install service without starting it%s.\n' "$( [ "$START" -eq 1 ] && printf ' and start it' || : )"
+  start_note=
+  if [ "$START" -eq 1 ]; then
+    start_note=' and start it'
+  fi
+  printf 'Would install service without starting it%s.\n' "$start_note"
   exit 0
 fi
 

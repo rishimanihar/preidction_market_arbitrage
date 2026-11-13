@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import stat
+import sys
 
 import pytest
 
@@ -145,6 +146,7 @@ def test_configured_secret_values_are_redacted(monkeypatch: pytest.MonkeyPatch) 
     assert MASK in stream.getvalue()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX mode bits do not apply on Windows")
 def test_log_dir_and_file_ignore_umask(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PMARB_LOG_DIR", raising=False)
     log_dir = tmp_path / "nested" / "logs"

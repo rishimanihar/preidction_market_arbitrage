@@ -41,7 +41,13 @@ from pmarb.models import Venue
 from pmarb.review import spool
 from pmarb.secrets import SecretPolicyError, check_key_file
 from pmarb.storage.db import open_reader, open_writer
-from pmarb.storage.rawlog import Envelope, RawLogWriter, iter_records, list_log_files
+from pmarb.storage.rawlog import (
+    CorruptLogError,
+    Envelope,
+    RawLogWriter,
+    iter_records,
+    list_log_files,
+)
 from tests.test_collector import T0, FakeVenue, Harness, build, pair, park
 
 REPO = Path(__file__).resolve().parents[1]
@@ -332,9 +338,22 @@ def test_pmarb_stop_shuts_down_scan_end_to_end(win32: None, tmp_path: Path, monk
         except sqlite3.Error:
             return False
 
+    def recording_ready() -> bool:
+        # The episode row can commit before the raw log flushes. Stopping in
+        # that window races shutdown and can leave no kalshi file on disk.
+        if not episodes_open():
+            return False
+        files = list_log_files(tmp_path, "kalshi")
+        if not files:
+            return False
+        try:
+            return next(iter_records(files, tolerate_torn_tail=True), None) is not None
+        except (OSError, ValueError, CorruptLogError):
+            return False
+
     def operator() -> None:
         deadline = time.monotonic() + 30
-        while time.monotonic() < deadline and not episodes_open():
+        while time.monotonic() < deadline and not recording_ready():
             time.sleep(0.1)
         try:
             cli.main(["stop"])

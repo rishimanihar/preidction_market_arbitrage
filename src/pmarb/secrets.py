@@ -4,7 +4,8 @@ On POSIX a key file must have no group or other permission bits, must be owned
 by the current user, and is opened with ``O_NOFOLLOW`` and read from that
 descriptor. On Windows mode bits mean nothing, so the file must instead sit
 under ``%USERPROFILE%\\.config\\pmarb\\`` and its ACL (read with ``icacls``)
-must not let Everyone, Users or Authenticated Users read it. See
+must not let Everyone, Users or Authenticated Users read it. Symlinks and
+other reparse points are refused before the file is opened. See
 :mod:`pmarb.winacl`.
 """
 
@@ -63,9 +64,11 @@ def check_key_file(
     ``icacls`` and ``allowed_dir`` defaults to :func:`windows_config_dir`. When
     ``icacls`` cannot run, the ACL is unverified. That is logged as a warning
     and also appended to ``warnings`` when given. It never passes silently.
+    On Windows a symlink or other reparse point is refused before those checks.
     """
     raw, resolved = _locate(path, repo_root, label)
     if is_windows():
+        _refuse_windows_reparse(raw, resolved, label)
         st = resolved.stat()
         if not stat.S_ISREG(st.st_mode):
             raise SecretPolicyError(f"{label} is not a regular file: {resolved}")
@@ -87,7 +90,8 @@ def load_private_key(
     ``repo_root`` defaults to this package's repository. The process working
     directory is not used. On POSIX the file is opened with ``O_NOFOLLOW``,
     checked with ``fstat`` on that descriptor, and read from the same
-    descriptor.
+    descriptor. On Windows a symlink or other reparse point is refused before
+    the ACL check, and the bytes are read only after that check passes.
     """
     root = _PACKAGE_ROOT if repo_root is None else repo_root
     if is_windows():
@@ -111,9 +115,42 @@ def _locate(path: Path | str, repo_root: Path | str, label: str) -> tuple[Path, 
     return raw, resolved
 
 
-def _open_checked(raw: Path, display: Path, label: str) -> int:
+def _is_reparse_point(path: Path) -> bool:
+    """True when ``path`` is a symlink or a Windows reparse point."""
+    if path.is_symlink():
+        return True
+    flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    if not flag:
+        return False
     try:
-        fd = os.open(raw, os.O_RDONLY | os.O_NOFOLLOW)
+        info = path.lstat()
+    except OSError:
+        return False
+    attributes = getattr(info, "st_file_attributes", 0) or 0
+    return bool(attributes & flag)
+
+
+def _refuse_windows_reparse(raw: Path, display: Path, label: str) -> None:
+    """On Windows, refuse a symlink or other reparse point before opening it.
+
+    POSIX does not use this. It opens with ``O_NOFOLLOW`` and checks ``fstat``.
+    """
+    if is_windows() and _is_reparse_point(raw):
+        raise SecretPolicyError(f"{label} is not a regular file: {display}")
+
+
+def _open_read_nofollow(path: Path) -> int:
+    """Open ``path`` read-only. POSIX sets ``O_NOFOLLOW``; Windows has no such flag."""
+    if is_windows():
+        # Reparse points are rejected by the caller. O_NOFOLLOW is absent here.
+        return os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    return os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+
+
+def _open_checked(raw: Path, display: Path, label: str) -> int:
+    _refuse_windows_reparse(raw, display, label)
+    try:
+        fd = _open_read_nofollow(raw)
     except OSError as exc:
         if exc.errno == errno.ENOENT:
             raise SecretPolicyError(f"{label} not found: {display}") from exc
@@ -195,8 +232,10 @@ def _configured_key_paths() -> list[Path]:
 
 def _fingerprint(path: Path) -> _KeyFingerprint | None:
     """SHA-256 of a configured key body. Unreadable paths are skipped."""
+    if is_windows() and _is_reparse_point(path):
+        return None
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        fd = _open_read_nofollow(path)
     except OSError:
         return None
     try:

@@ -1,5 +1,6 @@
 import hashlib
 import os
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -8,6 +9,7 @@ import pytest
 
 from pmarb.secrets import (
     SecretPolicyError,
+    _is_reparse_point,
     assert_no_tracked_secrets,
     check_key_file,
     load_private_key,
@@ -122,10 +124,38 @@ def test_not_a_git_repo_skipped(repo: Path) -> None:
     assert_no_tracked_secrets(repo, ["abc-SECRET-123"])
 
 
+def _private_acl_runner():
+    """icacls stand-in: only SYSTEM and Administrators can read."""
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        target = str(command[1])
+        pad = " " * (len(target) + 1)
+        stdout = (
+            f"{target} NT AUTHORITY\\SYSTEM:(F)\n"
+            f"{pad}BUILTIN\\Administrators:(F)\n"
+            "\nSuccessfully processed 1 files; Failed processing 0 files\n"
+        )
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    return run
+
+
 def test_load_uses_package_root_not_cwd(outside: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    key = make_key(outside)
-    monkeypatch.chdir(outside)
-    assert load_private_key(key) == b"synthetic-key-bytes"
+    directory = outside
+    runner = None
+    if sys.platform == "win32":
+        # Policy requires %USERPROFILE%\.config\pmarb. Point that root at this
+        # temp dir; do not relax the check. The inherited temp ACL is not what
+        # this test is about, so icacls is stubbed with a private ACL.
+        home = outside / "profile"
+        directory = home / ".config" / "pmarb"
+        directory.mkdir(parents=True)
+        monkeypatch.setenv("USERPROFILE", str(home))
+        runner = _private_acl_runner()
+    key = make_key(directory)
+    monkeypatch.chdir(directory)
+    assert load_private_key(key, runner=runner) == b"synthetic-key-bytes"
 
 
 def test_symlink_is_not_followed(repo: Path, outside: Path) -> None:
@@ -136,6 +166,60 @@ def test_symlink_is_not_followed(repo: Path, outside: Path) -> None:
         load_private_key(link, repo)
 
 
+def test_windows_symlink_rejected_without_o_nofollow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.delattr(os, "O_NOFOLLOW", raising=False)
+    home = tmp_path / "profile"
+    config = home / ".config" / "pmarb"
+    config.mkdir(parents=True)
+    monkeypatch.setenv("USERPROFILE", str(home))
+    real = make_key(config)
+    link = config / "alias.pem"
+    link.symlink_to(real)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    runner = _private_acl_runner()
+    with pytest.raises(SecretPolicyError, match="not a regular file"):
+        load_private_key(link, repo, runner=runner)
+    assert load_private_key(real, repo, runner=runner) == b"synthetic-key-bytes"
+
+
+def test_reparse_point_attribute_counts_without_a_symlink() -> None:
+    class _Entry:
+        def __init__(self, attributes: int) -> None:
+            self.st_file_attributes = attributes
+
+        def is_symlink(self) -> bool:
+            return False
+
+        def lstat(self) -> object:
+            return self
+
+    flag = stat.FILE_ATTRIBUTE_REPARSE_POINT
+    assert _is_reparse_point(_Entry(flag))  # type: ignore[arg-type]
+    assert not _is_reparse_point(_Entry(0))  # type: ignore[arg-type]
+
+
+def test_windows_tracked_key_digest_without_o_nofollow(
+    repo: Path, outside: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.delattr(os, "O_NOFOLLOW", raising=False)
+    body = b"synthetic-key-material-aaaaaaaaaaaaaaaa"
+    key = outside / "configured.pem"
+    key.write_bytes(body)
+    digest = hashlib.sha256(body).hexdigest()
+    git(repo, "init", "-q")
+    (repo / "hash.txt").write_text(digest + "\n")
+    git(repo, "add", ".")
+    with pytest.raises(SecretPolicyError, match="hash.txt") as info:
+        assert_no_tracked_secrets(repo, [], key_paths=[key])
+    assert digest not in str(info.value)
+
+
+@posix_only
 def test_rejects_key_owned_by_someone_else(
     repo: Path, outside: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
