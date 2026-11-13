@@ -6,6 +6,7 @@ import random
 import sqlite3
 import tempfile
 from collections.abc import Sequence
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -311,7 +312,7 @@ def _leg_key(leg: Leg) -> str:
 
 
 def _read_episodes(path: Path) -> tuple[tuple[object, ...], ...]:
-    with sqlite3.connect(path) as conn:
+    with closing(sqlite3.connect(path)) as conn:
         return tuple(
             conn.execute(
                 """SELECT id, group_id, yes_market_key, no_market_key, qty, class,
