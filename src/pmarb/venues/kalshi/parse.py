@@ -95,6 +95,34 @@ def parse_market(
     )
 
 
+def _rule_parts(payload: dict[str, Any] | None) -> list[str]:
+    if not isinstance(payload, dict):
+        return []
+    parts: list[str] = []
+    for key in ("rules_primary", "rules_secondary"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            parts.append(value.strip())
+    return parts
+
+
+def contract_terms_text(raw: dict[str, Any] | None) -> str:
+    """Reviewer-facing Kalshi terms from market and event rules fields.
+
+    The rules hash reads the same fields itself and does not use this string.
+    A re-extract of the terms PDF stays out of the hash.
+    """
+    payload = raw if isinstance(raw, dict) else {}
+    parts = _rule_parts(payload)
+    seen = set(parts)
+    event = payload.get("event")
+    for part in _rule_parts(event if isinstance(event, dict) else None):
+        if part not in seen:
+            parts.append(part)
+            seen.add(part)
+    return "\n\n".join(parts)
+
+
 def is_eligible(raw_market: dict[str, Any], series_raw: dict[str, Any]) -> tuple[bool, list[str]]:
     """Apply the narrow binary $1 game-market gate used by discovery."""
     reasons: list[str] = []

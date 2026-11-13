@@ -26,6 +26,7 @@ from pmarb.matching.rules import rules_hash
 from pmarb.models import EquivalenceGroup, GroupStatus, Market, Venue
 from pmarb.protocols import VenueAdapter
 from pmarb.storage.db import insert_rules_version, upsert_group, upsert_market
+from pmarb.venues.kalshi.parse import contract_terms_text
 
 _log = logging.getLogger(__name__)
 
@@ -213,8 +214,13 @@ class Discovery:
 
         def apply(conn: sqlite3.Connection, stored: Market = stored, now: datetime = now) -> None:
             upsert_market(conn, stored, now)
+            terms = (
+                contract_terms_text(stored.raw)
+                if stored.venue is Venue.KALSHI and isinstance(stored.raw, dict)
+                else ""
+            )
             insert_rules_version(
-                conn, stored.market_key, stored.rules_hash, stored.rules_text, "", now
+                conn, stored.market_key, stored.rules_hash, stored.rules_text, terms, now
             )
 
         self._enqueue(apply)

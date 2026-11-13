@@ -414,15 +414,23 @@ def insert_rules_version(
     terms_text: str,
     captured_utc: datetime,
 ) -> None:
-    """Insert one rules capture. A duplicate ``(market_key, rules_hash)`` is ignored."""
+    """Insert one rules capture.
+
+    A duplicate ``(market_key, rules_hash)`` keeps the first rules text. Empty
+    stored terms are filled when a later capture has terms text.
+    """
     captured = format_utc(captured_utc)
 
     def run() -> None:
         conn.execute(
             """
-            INSERT OR IGNORE INTO rules_versions (
+            INSERT INTO rules_versions (
                 market_key, rules_hash, rules_text, terms_text, captured_utc
             ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(market_key, rules_hash) DO UPDATE SET
+                terms_text = excluded.terms_text
+            WHERE rules_versions.terms_text = ''
+              AND excluded.terms_text != ''
             """,
             (market_key, rules_hash, rules_text, terms_text, captured),
         )
